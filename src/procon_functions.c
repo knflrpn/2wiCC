@@ -132,7 +132,7 @@ static void fill_input_report(struct ControllerData *controller_data)
 	controller_data->timestamp = tick;
 	controller_data->battery_level = battery_level_charging | battery_level_full;
 	controller_data->connection_info = /* 0xe; */ 0x1;
-	controller_data->vibrator_input_report = 0x07;
+	controller_data->vibrator_input_report = 0x70;
 
 	tick += 3;
 }
@@ -149,7 +149,6 @@ static void input_report_0x30(uint8_t const *usb_in, uint8_t *usb_out_buf)
 /* Used to ignore controller internal UART commands */
 static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
 {
-	char dbg[0x40] = {};
 	const uint8_t response_h[] = {0x81, usb_in[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 	memcpy(usb_out_buf, response_h, sizeof(response_h));
 }
@@ -341,7 +340,7 @@ static void output_report_0x01_get_device_info(uint8_t const *buf, uint8_t *usb_
 {
 	// Of note: procon, use colors in spi flash
 	unsigned char rawData[64] = {
-		0x15,
+		0x21,
 		0xf8,
 		0x81,
 		0x00,
@@ -355,19 +354,19 @@ static void output_report_0x01_get_device_info(uint8_t const *buf, uint8_t *usb_
 		0x78,
 		0x00,
 		0x82,
-		0x02,
-		0x04,
-		0x48,
-		0x03,
-		0x02,
-		0x64,
-		0xb6,
-		0xc9,
-		0x3e,
-		0x91,
-		0xe1,
-		0x01,
-		0x01,
+		0x02, // response to 02 subcommand
+		0x04, // firmware version
+		0x48, // firmware version
+		0x03, // Procon
+		0x02, // 02
+		0x64, // MAC
+		0xb6, // MAC
+		0xc9, // MAC
+		0x3e, // MAC
+		0x91, // MAC
+		0xe1, // MAC
+		0x01, // 01
+		0x01, // Colors in SPI
 		0x00,
 		0x00,
 		0x00,
@@ -453,7 +452,7 @@ static void output_report_0x01_readspi(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 
 	struct SpiReadReport *resp = (struct SpiReadReport *)&usb_out_buf[0x01];
-	uint16_t addr = *(uint16_t *)(&buf[kSubCommandDataOffset]);
+	uint16_t addr = buf[kSubCommandDataOffset] | (uint16_t)buf[kSubCommandDataOffset + 1] << 8;
 	uint8_t len = buf[kSubCommandDataOffset + 4];
 
 	memset(usb_out_buf, 0x00, 0x40);
