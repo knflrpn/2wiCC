@@ -28,52 +28,52 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(PriCC C CXX ASM)
+project(2wiCC C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(PriCC
-    src/PriCC.c
+add_executable(2wiCC
+    src/2wiCC.c
     src/usb_descriptors.c
 )
 
-pico_set_program_name(PriCC "PriCC")
-pico_set_program_version(PriCC "0.1")
+pico_set_program_name(2wiCC "2wiCC")
+pico_set_program_version(2wiCC "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(PriCC ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+pico_generate_pio_header(2wiCC ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(PriCC 1)
-pico_enable_stdio_usb(PriCC 0)
-target_compile_definitions(PriCC PRIVATE
+pico_enable_stdio_uart(2wiCC 1)
+pico_enable_stdio_usb(2wiCC 0)
+target_compile_definitions(2wiCC PRIVATE
   PICO_DEFAULT_UART=0
   PICO_DEFAULT_UART_TX_PIN=0
   PICO_DEFAULT_UART_RX_PIN=1
 )
 
 # Add the standard library to the build
-target_link_libraries(PriCC
+target_link_libraries(2wiCC
         pico_stdlib
         tinyusb_device
         tinyusb_board 
     )
 
 # Add the standard include files to the build
-target_include_directories(PriCC PRIVATE
+target_include_directories(2wiCC PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
 # Add any user requested libraries
-target_link_libraries(PriCC 
+target_link_libraries(2wiCC 
         hardware_spi
         hardware_pio
         hardware_timer
         )
 
-pico_add_extra_outputs(PriCC)
+pico_add_extra_outputs(2wiCC)
 

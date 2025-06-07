@@ -4,7 +4,7 @@
 #include "hardware/pio.h"
 #include "hardware/timer.h"
 #include "pico/time.h"
-#include "PriCC.h"
+#include "2wiCC.h"
 
 #include "tusb.h"
 #include "usb_descriptors.h"
