@@ -11,15 +11,20 @@ bool special_report_queued = false;
 static uint8_t tick = 0;
 uint32_t last_report_time = 0;
 
-void set_neutral_con()
+void set_neutral_analog(ControllerAnalog_t* analogstate)
 {
-	current_controller_data->analog.analog[0] = 0xFF;
-	current_controller_data->analog.analog[1] = 0xF7;
-	current_controller_data->analog.analog[2] = 0x7F;
-	current_controller_data->analog.analog[3] = 0xFF;
-	current_controller_data->analog.analog[4] = 0xF7;
-	current_controller_data->analog.analog[5] = 0x7F;
-	current_controller_data->digital.charging_grip = 1;
+	analogstate->analog[0] = 0xFF;
+	analogstate->analog[1] = 0xF7;
+	analogstate->analog[2] = 0x7F;
+	analogstate->analog[3] = 0xFF;
+	analogstate->analog[4] = 0xF7;
+	analogstate->analog[5] = 0x7F;
+}
+
+// Copy a provided controller state (digital and analog) to a controller data.
+void insert_constate_to_condata(ControllerData_t* condata, ControllerDigital_t* condigital, ControllerAnalog_t* conanalog) {
+    memcpy(&condata->digital, condigital, sizeof(ControllerDigital_t));
+    memcpy(&condata->analog, conanalog, sizeof(ControllerAnalog_t));
 }
 
 /* see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md */
@@ -73,6 +78,7 @@ static void fill_input_report(ControllerData_t* controller_data)
 }
 
 /* 0x30 is the full report with IMU data. */
+/*
 static void input_report_0x30(uint8_t const *usb_in, uint8_t *usb_out_buf)
 {
 	// report ID
@@ -80,6 +86,7 @@ static void input_report_0x30(uint8_t const *usb_in, uint8_t *usb_out_buf)
 
 	fill_input_report((struct ControllerData *)&usb_out_buf[0x01]);
 }
+*/
 
 /* Used to ignore controller internal UART commands */
 static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
@@ -170,7 +177,7 @@ static void output_report_0x01_unknown_subcmd(uint8_t const *buf, uint8_t *usb_o
 }
 
 /* 0x01 subcommand 0x08: Set shipment low power state.
-   This does nothing to this device, so just send a dummy response. */
+   This does nothing to this device, so just send a canned response. */
 static void output_report_0x01_0x08_lowpower_state(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	unsigned char rawData[64] = {

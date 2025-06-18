@@ -11,7 +11,9 @@
 #include "usb_descriptors.h"
 #include "procon_functions.c"
 
-ControllerData_t con_buffer[CON_BUF_SIZE];
+ControllerData_t con_data;
+ControllerDigital_t digital_buffer[CON_BUF_SIZE];
+ControllerAnalog_t analog_buffer[CON_BUF_SIZE];
 uint16_t conbuf_head, conbuf_tail = 0;
 
 bool usb_connected = 0;
@@ -22,22 +24,24 @@ int64_t alarm_callback(alarm_id_t id, void *user_data)
 
 	if ((heartbeat % 4) == 1)
 	{
-		con_buffer[conbuf_tail].digital.button_x = 1;
+		digital_buffer[conbuf_tail].button_x = 1;
 	}
 	else
 	{
-		con_buffer[conbuf_tail].digital.button_x = 0;
+		digital_buffer[conbuf_tail].button_x = 0;
 	}
 	if ((heartbeat % 4) == 3)
 	{
-		con_buffer[conbuf_tail].digital.button_y = 1;
+		digital_buffer[conbuf_tail].button_y = 1;
 	}
 	else
 	{
-		con_buffer[conbuf_tail].digital.button_y = 0;
+		digital_buffer[conbuf_tail].button_y = 0;
 	}
-	//    con_buffer[conbuf_tail].button_a = !con_buffer[conbuf_tail].button_a;
-	debug_pixel(urgb_u32(con_buffer[conbuf_tail].digital.button_y, 1, 0));
+	// Insert updated state into data
+	insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+	//    digital_buffer[conbuf_tail].button_a = !digital_buffer[conbuf_tail].button_a;
+	debug_pixel(urgb_u32(digital_buffer[conbuf_tail].button_y, 1, 0));
 	heartbeat++;
 
 	add_alarm_in_ms(500, alarm_callback, NULL, false);
@@ -355,8 +359,9 @@ int main()
 	// Set up USB
 	tusb_init();
 
-	current_controller_data = &con_buffer[conbuf_tail];
-	set_neutral_con(&con_buffer[conbuf_tail]);
+	current_controller_data = &con_data;
+	set_neutral_analog(&analog_buffer[conbuf_tail]);
+	digital_buffer[conbuf_tail].charging_grip = 1;
 
 	while (true)
 	{
@@ -444,23 +449,24 @@ void parse_usb(uint8_t const *current_usb_buf, uint16_t len)
 
 	switch (cmd)
 	{
-	case 0x01:
+	case 0x01: // subcommand
 		output_report_0x01(current_usb_buf, usb_special_buf);
 		special_report_pending = true;
 		break;
-	case 0x10:
+	case 0x10: // rumble only
+		// Doesn't do anything. Don't set special report pending, because
+		// it won't get cleared, because there's no response.
 		output_report_0x10(current_usb_buf, usb_special_buf);
-		//        special_report_pending = true;
 		break;
 
-	case 0x80:
+	case 0x80: // basic HID
 		output_report_0x80(current_usb_buf, usb_special_buf);
 		special_report_pending = true;
 		break;
 
-	case 0x30:
-		// default:
-		input_report_0x30(current_usb_buf, usb_norm_buf);
+	case 0x30: // normal controller state
+		con_data.digital.charging_grip = 1;
+		tud_hid_report(0x30, &con_data, 0x3F);
 		special_report_pending = false;
 		usb_connected = true;
 		break;
@@ -495,8 +501,9 @@ void hid_task(void)
 			if (polling_mode == 0x30)
 			{ // 0x30 is full polling mode
 				// Generate a normal report
-				input_report_0x30(0, usb_norm_buf);
-				tud_hid_report(usb_norm_buf[0], &usb_norm_buf[1], 0x3F);
+				insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+//				input_report_0x30(0, usb_norm_buf);
+				tud_hid_report(0x30, &con_data, 0x3F);
 				last_report_time = current_time;
 				//                printf("n");
 			}
