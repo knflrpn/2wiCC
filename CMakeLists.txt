@@ -34,7 +34,6 @@ project(2wiCC C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
-
 add_executable(2wiCC
     src/2wiCC.c
     src/usb_descriptors.c
@@ -46,8 +45,8 @@ pico_set_program_version(2wiCC "0.1")
 # Generate PIO header
 pico_generate_pio_header(2wiCC ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
 
-# Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(2wiCC 1)
+# No std output
+pico_enable_stdio_uart(2wiCC 0)
 pico_enable_stdio_usb(2wiCC 0)
 target_compile_definitions(2wiCC PRIVATE
   PICO_DEFAULT_UART=0
@@ -58,8 +57,6 @@ target_compile_definitions(2wiCC PRIVATE
 # Add the standard library to the build
 target_link_libraries(2wiCC
         pico_stdlib
-        tinyusb_device
-        tinyusb_board 
     )
 
 # Add the standard include files to the build
@@ -73,6 +70,9 @@ target_link_libraries(2wiCC
         hardware_spi
         hardware_pio
         hardware_timer
+        pico_multicore
+        tinyusb_device
+        tinyusb_board 
         )
 
 pico_add_extra_outputs(2wiCC)
