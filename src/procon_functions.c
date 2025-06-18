@@ -1,7 +1,7 @@
 #include "usb_descriptors.h"
 #include "procon_functions.h"
 
-static struct ControllerData *controller_state;
+static ControllerData_t* current_controller_data;
 uint8_t usb_special_buf[0x40]; // Buffer for special messages
 uint8_t usb_norm_buf[0x40];	   // Buffer for normal messages
 uint8_t polling_mode = 0;
@@ -13,13 +13,13 @@ uint32_t last_report_time = 0;
 
 void set_neutral_con()
 {
-	controller_state->analog[0] = 0xFF;
-	controller_state->analog[1] = 0xF7;
-	controller_state->analog[2] = 0x7F;
-	controller_state->analog[3] = 0xFF;
-	controller_state->analog[4] = 0xF7;
-	controller_state->analog[5] = 0x7F;
-	controller_state->charging_grip = 1;
+	current_controller_data->analog.analog[0] = 0xFF;
+	current_controller_data->analog.analog[1] = 0xF7;
+	current_controller_data->analog.analog[2] = 0x7F;
+	current_controller_data->analog.analog[3] = 0xFF;
+	current_controller_data->analog.analog[4] = 0xF7;
+	current_controller_data->analog.analog[5] = 0x7F;
+	current_controller_data->digital.charging_grip = 1;
 }
 
 /* see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md */
@@ -60,9 +60,9 @@ void spi_erase(uint16_t addr, uint8_t len)
 }
 
 /* Inserts the common controller data into the provided report */
-static void fill_input_report(struct ControllerData *controller_data)
+static void fill_input_report(ControllerData_t* controller_data)
 {
-	memcpy(controller_data, controller_state, sizeof(struct ControllerData));
+	memcpy(controller_data, current_controller_data, sizeof(struct ControllerData));
 
 	controller_data->timestamp = tick;
 	controller_data->battery_level = battery_level_charging | battery_level_full;

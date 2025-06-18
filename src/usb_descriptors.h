@@ -85,33 +85,33 @@ extern char shared_buf[0x40];
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(52),                                                                        \
 		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
-		HID_USAGE_PAGE_N(0xFF00, 2), /* Report 0x21 */                                               \
-		0x85, 0x21,                                                                                  \
+		HID_USAGE_PAGE_N(0xFF00, 2),                                                                 \
+		0x85, 0x21,                                                 /* Report IN 0x21 */             \
 		HID_USAGE(0x01),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE), /* Report 0x81 */                     \
-		0x85, 0x81,                                                                                  \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
+		0x85, 0x81,                                                 /* Report IN 0x81 */             \
 		HID_USAGE(0x02),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE), /* Report OUT 0x01 */                 \
-		0x85, 0x01,                                                                                  \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
+		0x85, 0x01,                                                 /* Report OUT 0x01 */            \
 		HID_USAGE(0x03),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), /* Report OUT 0x10 */ \
-		0x85, 0x10,                                                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
+		0x85, 0x10,                                                 /* Report OUT 0x10 */            \
 		HID_USAGE(0x04),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), /* Report OUT 0x80 */ \
-		0x85, 0x80,                                                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
+		0x85, 0x80,                                                 /* Report OUT 0x80 */            \
 		HID_USAGE(0x05),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), /* Report OUT 0x82 */ \
-		0x85, 0x82,                                                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
+		0x85, 0x82,                                                 /* Report OUT 0x82 */            \
 		HID_USAGE(0x06),                                                                             \
 		HID_REPORT_SIZE(8),                                                                          \
 		HID_REPORT_COUNT(63),                                                                        \
@@ -151,10 +151,10 @@ enum battery_level
 	battery_level_full = 0x8,
 };
 
-enum joycon_connexion
+enum joycon_connection
 {
-	joycon_connexion_bt = 0x03 << 1,
-	joycon_connexion_usb = 0,
+	joycon_connection_bt = 0x03 << 1,
+	joycon_connection_usb = 0,
 };
 
 // Sub-types of the 0x80 output report, used for initialization.
@@ -217,11 +217,8 @@ static const int kVibrationFrequencyHzMax = 1253;
 static const int kVibrationAmplitudeMax = 1000;
 
 #pragma pack(1)
-typedef struct ControllerData
+typedef struct ControllerDigital
 {
-	uint8_t timestamp;
-	uint8_t connection_info : 4;
-	uint8_t battery_level : 4;
 	// btn right - 8bit
 	uint8_t button_y : 1;
 	uint8_t button_x : 1;
@@ -249,20 +246,35 @@ typedef struct ControllerData
 	uint8_t button_left_sl : 1;
 	uint8_t button_l : 1;
 	uint8_t button_zl : 1;
+} ControllerDigital_t;
+
+#pragma pack(1)
+typedef struct ControllerAnalog
+{
 	// analog - 48
 	uint8_t analog[6];
+} ControllerAnalog_t;
+
+#pragma pack(1)
+typedef struct ControllerData
+{
+	uint8_t timestamp;
+	uint8_t connection_info : 4;
+	uint8_t battery_level : 4;
+	struct ControllerDigital digital; // 3 bytes
+	struct ControllerAnalog analog;  // 6 bytes
 	uint8_t rumble_input_report;
 } ControllerData_t;
 
 // In standard full input report mode, controller data is reported with IMU data
 // in reports with ID 0x30.
 #pragma pack(1)
-struct ControllerDataReport
+typedef struct ControllerDataReport
 {
 	struct ControllerData controller_data; // 12 bytes
 	uint8_t imu_data[36];
 	uint8_t padding[kMaxInputReportSizeBytes - 49 /* 36 + 12 +1(reportid ?) */];
-};
+} ControllerDataReport_t;
 
 // Responses to SPI read requests are sent in reports with ID 0x21. These
 // reports also include controller data.

@@ -56,9 +56,19 @@ enum {
 	C_D            // receiving a new delay value
 };
 
-#define CMD_CHAR '+'
-
 #define CON_BUF_SIZE 1024
+
+#define CMD_CHAR '+'
+#define CMD_STR_LEN 64
+
+typedef void (*cmd_fn_t)(const char *arg);
+typedef struct
+{
+	const char *name;
+	cmd_fn_t fn;
+} command_t;
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 //--------------------------------------------------------------------
 // NeoPixel control
