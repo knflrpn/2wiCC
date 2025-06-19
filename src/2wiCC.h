@@ -38,10 +38,10 @@ typedef struct
 	uint8_t VendorSpec;
 } USB_ControllerReport_Input_t;
 
-// Action state
+// Playback state
 enum {
 	A_RT,   // real-time
-	A_PLAY, // play from buffer
+	A_BUF,  // play from buffer
 };
 
 // Serial control information
@@ -94,3 +94,6 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b)
 
 void hid_task(void);
 void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
+
+
+static void alarm_in_us(uint32_t delay_us);

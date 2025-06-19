@@ -15,38 +15,11 @@ ControllerData_t con_data;
 ControllerDigital_t digital_buffer[CON_BUF_SIZE];
 ControllerAnalog_t analog_buffer[CON_BUF_SIZE];
 uint16_t conbuf_head, conbuf_tail = 0;
+uint8_t global_imu[36];
 
-bool usb_connected = 0;
+uint8_t play_mode = A_RT;
 
-int64_t alarm_callback(alarm_id_t id, void *user_data)
-{
-	static uint8_t heartbeat = 1;
-
-	if ((heartbeat % 4) == 1)
-	{
-		digital_buffer[conbuf_tail].button_x = 1;
-	}
-	else
-	{
-		digital_buffer[conbuf_tail].button_x = 0;
-	}
-	if ((heartbeat % 4) == 3)
-	{
-		digital_buffer[conbuf_tail].button_y = 1;
-	}
-	else
-	{
-		digital_buffer[conbuf_tail].button_y = 0;
-	}
-	// Insert updated state into data
-	insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
-	//    digital_buffer[conbuf_tail].button_a = !digital_buffer[conbuf_tail].button_a;
-	debug_pixel(urgb_u32(digital_buffer[conbuf_tail].button_y, 1, 0));
-	heartbeat++;
-
-	add_alarm_in_ms(500, alarm_callback, NULL, false);
-	return 0;
-}
+static bool usb_connected = false;
 
 /*
 			// ID self
@@ -216,50 +189,124 @@ int64_t alarm_callback(alarm_id_t id, void *user_data)
 bool command_ready = false;
 char cmd_str[CMD_STR_LEN];
 
-// Add digital controller state to the queue
-static void cmd_qd(const char *arg)
+// Convert 2 hex characters into a byte in a pretty unsafe way.
+uint8_t hex2byte(const char* ch) {
+	int val = 0, tval = 0;
+	// Convert hex digits to number
+	for (uint8_t i=0; i<2; i++) {
+		val = val<<4;     // Shift to next nibble
+		tval = ch[i]-'0'; // Convert ascii number to its value
+		if (tval > 9) tval -= ('A'-'0'-10); // Convert A-F
+		val += tval;
+	}
+	return val;
+}
+
+/* Respond with an integer encoded in hex, starting with + and a header, ending with newline.
+ */
+void uart_resp_int(const char *header, unsigned int msg)
 {
-	//add_queue_digital(arg);
+    char msgstr[5];
+    sprintf(msgstr, "%04X", msg);
+	uart_putc(uart0, '+');
+	uart_puts(uart0, header);
+	uart_putc(uart0, ' ');
+	uart_puts(uart0, msgstr);
+	uart_putc(uart0, '\r');
+	uart_putc(uart0, '\n');
+}
+
+// Add digital controller state to the queue
+static void cmd_queuedigital(const char* arg) {
+	// Three bytes of button data
+	uint8_t* asbytes = (uint8_t*)&digital_buffer[conbuf_head];
+	asbytes[0] = hex2byte(arg+0);
+	asbytes[1] = hex2byte(arg+2);
+	asbytes[2] = hex2byte(arg+4);
+	// No analog data, so make it neutral
+	set_neutral_analog(&analog_buffer[conbuf_head]);
+	// Move the head
+	conbuf_head = (conbuf_head+1)%CON_BUF_SIZE;
+}
+
+// Add full controller state to the queue
+static void cmd_queuefull(const char* arg) {
+	// Three bytes of button data
+	uint8_t* dig_asbytes = (uint8_t*)&digital_buffer[conbuf_head];
+	dig_asbytes[0] = hex2byte(arg+0);
+	dig_asbytes[1] = hex2byte(arg+2);
+	dig_asbytes[2] = hex2byte(arg+4);
+	// Six bytes of stick data
+	uint8_t* analog_asbytes = (uint8_t*)&analog_buffer[conbuf_head];
+	analog_asbytes[0] = hex2byte(arg+6);
+	analog_asbytes[1] = hex2byte(arg+8);
+	analog_asbytes[2] = hex2byte(arg+10);
+	analog_asbytes[3] = hex2byte(arg+12);
+	analog_asbytes[4] = hex2byte(arg+14);
+	analog_asbytes[5] = hex2byte(arg+16);
+	// Move the head
+	conbuf_head = (conbuf_head+1)%CON_BUF_SIZE;
 }
 
 // Respond with identification
-static void cmd_id(const char *arg)
-{
+static void cmd_id(const char* arg) {
 	uart_puts(uart0, "+2wiCC\r\n");
 }
 
 // Respond with firmware version
-static void cmd_ver(const char *arg)
-{
+static void cmd_ver(const char* arg) {
 	uart_puts(uart0, "+VER 1.0\r\n");
 }
 
 // Get USB connection status
-static void cmd_gcs(const char *arg)
-{
+static void cmd_getconnectionstatus(const char* arg) {
 	if (usb_connected)
 		uart_puts(uart0, "+GCS 1\r\n");
 	else
 		uart_puts(uart0, "+GCS 0\r\n");
 }
 
+static void cmd_setplaymode(const char* arg) {
+	if (strncmp(arg, "RT", 5) == 0) {
+		play_mode = A_RT;
+	}
+	if (strncmp(arg, "BUF", 5) == 0) {
+		play_mode = A_BUF;
+	}
+}
+
+// Get the queue fullness
+static void cmd_getqueueremaining(const char* arg) {
+	uint16_t free_amt = (conbuf_tail + CON_BUF_SIZE - conbuf_head - 1) % CON_BUF_SIZE;
+	uart_resp_int("GQF", free_amt);
+}
+
+// Get the size of the queue
+static void cmd_getqueuesize(const char* arg) {
+	uart_resp_int("GQS", CON_BUF_SIZE);
+}
+
 // Echo the sent argument (loopback testing)
-static void cmd_echo(const char *arg)
-{
+static void cmd_echo(const char* arg) {
 	uart_puts(uart0, "+ECHO ");
 	uart_puts(uart0, arg);
 }
 
 static const command_t commands[] = {
 	// Make sure the trailing space is present.
+	{"QD ", cmd_queuedigital},
+	{"QF ", cmd_queuefull},
+	{"SPM ", cmd_setplaymode},
+	{"GQR", cmd_getqueueremaining},
+	{"GQS", cmd_getqueuesize},
 	{"ID ", cmd_id},
 	{"VER ", cmd_ver},
-	{"GCS ", cmd_gcs},
+	{"GCS ", cmd_getconnectionstatus},
 	{"ECHO ", cmd_echo},
 };
 
 // Each time a character is received, process it.
-void on_uart_rx()
+static void on_uart_rx()
 {
 	static int cmd_state = C_IDLE;
 	static char cmd_buf[CMD_STR_LEN]; // incoming command string
@@ -284,10 +331,10 @@ void on_uart_rx()
 				strncpy(cmd_str, cmd_buf, incoming_idx);
 				// Ensure null termination
 				cmd_str[incoming_idx + 1] = '\0';
+				// Flag the parser
+				command_ready = true;
 			}
 			incoming_idx = 0;
-			// Flag the parser
-			command_ready = true;
 		}
 		else
 		{
@@ -295,10 +342,69 @@ void on_uart_rx()
 			if (incoming_idx < (CMD_STR_LEN - 1)) // Never fill the final null terminator
 			{
 				cmd_buf[incoming_idx++] = ch;
-				incoming_idx++;
 			}
 		}
 	}
+}
+
+/* Alarm interrupt handler.
+   This happens once per game frame, and is used to update the USB data.
+*/
+static void alarm_irq(void)
+{
+	static uint16_t heartbeat = 0;
+	static uint8_t collision_count = 0;
+
+    // Clear the alarm irq
+    hw_clear_bits(&timer_hw->intr, 1u << 0);
+	alarm_in_us(16666);
+
+	if (collision_count > 5) {
+		// Ran out of buffer data.  Set neutral controller
+		// and realtime mode.
+		play_mode = A_RT;
+		cmd_queuedigital("000000");
+	}
+
+	if (play_mode == A_RT) {
+		// Point to the latest state
+		conbuf_tail = (conbuf_head-1)%CON_BUF_SIZE;
+	}
+	if (play_mode == A_BUF) {
+		// Move the tail up if possible
+		uint16_t nextpos = (conbuf_tail+1)%CON_BUF_SIZE;
+		if (nextpos != conbuf_head) {
+			conbuf_tail = nextpos;
+			collision_count = 0;
+		} else {
+			collision_count++;
+		}
+	}
+	// Insert updated state into data
+	insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+
+	heartbeat++;
+	uint8_t hb = ((heartbeat % 64) == 0) * 4 | ((heartbeat % 64) == 11) * 32;
+    debug_pixel(urgb_u32(hb, 0, usb_connected * 4));
+
+}
+
+/* Set up an alarm in the future.
+ */
+static void alarm_in_us(uint32_t delay_us)
+{
+    // Enable the interrupt for the alarm
+    hw_set_bits(&timer_hw->inte, 1u << 0);
+    // Set irq handler for alarm irq
+    irq_set_exclusive_handler(TIMER_IRQ_0, alarm_irq);
+    // Enable the alarm irq
+    irq_set_enabled(TIMER_IRQ_0, true);
+    // Enable interrupt in block and at processor
+    uint64_t target = timer_hw->timerawl + delay_us;
+
+    // Write the lower 32 bits of the target time to the alarm which
+    // will arm it
+    timer_hw->alarm[0] = (uint32_t)target;
 }
 
 void core1_task()
@@ -331,8 +437,9 @@ void core1_task()
 			{
 				if (strncmp(cmd_str, commands[i].name, strlen(commands[i].name)) == 0)
 				{
-					const char *arg = cmd_str + strlen(commands[i].name);
+					const char* arg = cmd_str + strlen(commands[i].name);
 					commands[i].fn(arg);
+					cmd_str[0] = '\0';
 					break;
 				}
 			}
@@ -354,7 +461,7 @@ int main()
 	ws2812_program_init(pio, 0, offset, 16, 800000, IS_RGBW);
 	debug_pixel(urgb_u32(0, 0, 1));
 
-	add_alarm_in_ms(2000, alarm_callback, NULL, false);
+	alarm_in_us(200000);
 
 	// Set up USB
 	tusb_init();
@@ -362,11 +469,13 @@ int main()
 	current_controller_data = &con_data;
 	set_neutral_analog(&analog_buffer[conbuf_tail]);
 	digital_buffer[conbuf_tail].charging_grip = 1;
+	conbuf_head = 1;
 
 	while (true)
 	{
 		tud_task();
 		hid_task();
+		usb_connected = tud_connected();
 	}
 }
 
@@ -383,7 +492,6 @@ void tud_mount_cb(void)
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
-	usb_connected = false;
 }
 
 // Invoked when usb bus is suspended
@@ -465,10 +573,8 @@ void parse_usb(uint8_t const *current_usb_buf, uint16_t len)
 		break;
 
 	case 0x30: // normal controller state
-		con_data.digital.charging_grip = 1;
 		tud_hid_report(0x30, &con_data, 0x3F);
 		special_report_pending = false;
-		usb_connected = true;
 		break;
 	}
 	uint32_t current_time = to_ms_since_boot(get_absolute_time());
@@ -485,10 +591,11 @@ void hid_task(void)
 		{
 			// Offer initial connection report
 			const uint8_t response_h[] = {
-				0x81, 0x01, 0x00, 0x03, 0xc1, 0xc9, 0x3e, 0xe9, 0xb6, 0x98, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* ......>......... */
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* ................ */
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* ................ */
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* ................ */
+				// Hi, I'm a pro controller with KNfLrPn's controller's MAC 
+				0x81, 0x01, 0x00, 0x03, 0xe6, 0x91, 0x3e, 0xc9, 0xb5, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 			};
 			memcpy(usb_special_buf, response_h, sizeof(response_h));
 			special_report_pending = true;
@@ -502,10 +609,8 @@ void hid_task(void)
 			{ // 0x30 is full polling mode
 				// Generate a normal report
 				insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
-//				input_report_0x30(0, usb_norm_buf);
 				tud_hid_report(0x30, &con_data, 0x3F);
 				last_report_time = current_time;
-				//                printf("n");
 			}
 		}
 		else

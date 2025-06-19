@@ -219,6 +219,7 @@ static const int kVibrationAmplitudeMax = 1000;
 #pragma pack(1)
 typedef struct ControllerDigital
 {
+	// Note: list here is from lsb to msb within byte, first byte to last byte
 	// btn right - 8bit
 	uint8_t button_y : 1;
 	uint8_t button_x : 1;

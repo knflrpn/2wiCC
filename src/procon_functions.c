@@ -8,60 +8,72 @@ uint8_t polling_mode = 0;
 uint8_t imu_enabled = 0;
 bool special_report_pending = false;
 bool special_report_queued = false;
-static uint8_t tick = 0;
 uint32_t last_report_time = 0;
 
 void set_neutral_analog(ControllerAnalog_t* analogstate)
 {
-	analogstate->analog[0] = 0xFF;
-	analogstate->analog[1] = 0xF7;
-	analogstate->analog[2] = 0x7F;
-	analogstate->analog[3] = 0xFF;
-	analogstate->analog[4] = 0xF7;
-	analogstate->analog[5] = 0x7F;
+	analogstate->analog[0] = 0x00;
+	analogstate->analog[1] = 0x08;
+	analogstate->analog[2] = 0x80;
+	analogstate->analog[3] = 0x00;
+	analogstate->analog[4] = 0x08;
+	analogstate->analog[5] = 0x80;
 }
 
 // Copy a provided controller state (digital and analog) to a controller data.
 void insert_constate_to_condata(ControllerData_t* condata, ControllerDigital_t* condigital, ControllerAnalog_t* conanalog) {
     memcpy(&condata->digital, condigital, sizeof(ControllerDigital_t));
     memcpy(&condata->analog, conanalog, sizeof(ControllerAnalog_t));
+	condata->digital.charging_grip = 1;
+	condata->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
+	condata->battery_level = battery_level_charging | battery_level_full;
+	condata->connection_info = 0x1; // Procon being powered by Switch
+	condata->rumble_input_report = 0x70;
 }
 
 /* see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md */
 
-/* Gets a value from the controller's non-volatile memory */
+/**
+ * Reads 'len' bytes from non-volatile memory starting at 'addr'.
+ * Valid address ranges are beginnings of the 0x2000 and 0x6000
+ * blocks, since those contain the important configuration data.
+ * Bytes outside the valid ranges are filled with 0xFF.
+ */
 void spi_read(uint16_t addr, uint8_t len, uint8_t *buffer)
 {
-	uint8_t *data = NULL;
-	switch (addr & 0xF000)
-	{
-	case 0x6000:
-		// Factory Configuration and Calibration
-		data = (uint8_t *)&spi0x6000[addr & 0xFF];
-		break;
-	case 0x2000:
-		// Pairing info
-		data = (uint8_t *)&spi0x2000[addr & 0x7F];
-		break;
+    if (!buffer || len == 0) {
+        return;
+    }
 
-	default:
-		break;
-	}
+    const uint16_t base2000 = 0x2000u;
+    const uint16_t base6000 = 0x6000u;
+    const uint16_t size2000 = sizeof(spi0x2000);
+    const uint16_t size6000 = sizeof(spi0x6000);
+    const uint16_t end2000 = base2000 + size2000;
+    const uint16_t end6000 = base6000 + size6000;
 
-	if (data)
-		memcpy(buffer, data, len);
-	else
-		memset(buffer, 0xFF, len);
+    for (uint8_t i = 0; i < len; ++i) {
+        uint16_t addr16 = (uint16_t)addr + i;
+        uint8_t value = 0xFF;
+
+        if (addr16 >= base2000 && addr16 < end2000) {
+            value = spi0x2000[addr16 - base2000];
+        } else if (addr16 >= base6000 && addr16 < end6000) {
+            value = spi0x6000[addr16 - base6000];
+        }
+
+        buffer[i] = value;
+    }
 }
 
 void spi_write(uint16_t addr, uint8_t len, uint8_t const *buffer)
 {
-	// Not implemented
+	// Not supported
 }
 
 void spi_erase(uint16_t addr, uint8_t len)
 {
-	// Not implemented
+	// Not supported
 }
 
 /* Inserts the common controller data into the provided report */
@@ -69,12 +81,11 @@ static void fill_input_report(ControllerData_t* controller_data)
 {
 	memcpy(controller_data, current_controller_data, sizeof(struct ControllerData));
 
-	controller_data->timestamp = tick;
+	controller_data->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
 	controller_data->battery_level = battery_level_charging | battery_level_full;
-	controller_data->connection_info = /* 0xe; */ 0x1;
+	controller_data->connection_info = 0x1;
 	controller_data->rumble_input_report = 0x70;
 
-	tick += 3;
 }
 
 /* 0x30 is the full report with IMU data. */
