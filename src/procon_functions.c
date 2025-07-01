@@ -6,6 +6,8 @@ uint8_t usb_special_buf[0x40]; // Buffer for special messages
 uint8_t usb_norm_buf[0x40];	   // Buffer for normal messages
 uint8_t polling_mode = 0;
 uint8_t imu_enabled = 0;
+uint8_t current_imu_data[36];
+bool imu_abbreviated = true;
 bool special_report_pending = false;
 bool special_report_queued = false;
 uint32_t last_report_time = 0;

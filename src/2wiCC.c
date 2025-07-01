@@ -368,7 +368,7 @@ static void alarm_irq(void)
 
 	if (play_mode == A_RT) {
 		// Point to the latest state
-		conbuf_tail = (conbuf_head-1)%CON_BUF_SIZE;
+		conbuf_tail = (conbuf_head + CON_BUF_SIZE - 1) % CON_BUF_SIZE;;
 	}
 	if (play_mode == A_BUF) {
 		// Move the tail up if possible
