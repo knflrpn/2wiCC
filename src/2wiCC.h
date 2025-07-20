@@ -26,6 +26,8 @@
 #include <stdint.h>
 #include "ws2812.pio.h"
 
+#define VERSION_NUMBER "1.0"
+
 // Controller HID report structure.
 typedef struct
 {
@@ -60,6 +62,8 @@ enum {
 
 #define CMD_CHAR '+'
 #define CMD_STR_LEN 64
+
+#define VSYNC_IN_PIN 14
 
 typedef void (*cmd_fn_t)(const char *arg);
 typedef struct
@@ -97,3 +101,41 @@ void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
 
 
 static void alarm_in_us(uint32_t delay_us);
+
+//--------------------------------------------------------------------
+// Function Predeclarations
+//--------------------------------------------------------------------
+
+// Utility functions
+uint8_t hex2byte(const char *ch);
+void uart_resp_int(const char *header, unsigned int msg);
+
+// UART command handlers
+static void cmd_queuedigital(const char *arg);
+static void cmd_queuefull(const char *arg);
+static void cmd_id(const char *arg);
+static void cmd_ver(const char *arg);
+static void cmd_getconnectionstatus(const char *arg);
+static void cmd_setplaymode(const char *arg);
+static void cmd_getqueueremaining(const char *arg);
+static void cmd_getqueuesize(const char *arg);
+static void cmd_echo(const char *arg);
+static void cmd_vsync_en(const char *arg);
+static void cmd_set_frame_delay(const char *cstr);
+
+// UART communication
+static void on_uart_rx(void);
+
+// Timer and interrupt handlers
+static void alarm_irq(void);
+static void alarm_in_us(uint32_t delay_us);
+void gpio_callback(uint gpio, uint32_t events);
+
+// Core tasks
+void core1_task(void);
+int main(void);
+
+// USB HID functions
+void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
+void hid_task(void);
+

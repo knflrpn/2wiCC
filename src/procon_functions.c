@@ -27,7 +27,7 @@ void insert_constate_to_condata(ControllerData_t* condata, ControllerDigital_t* 
     memcpy(&condata->digital, condigital, sizeof(ControllerDigital_t));
     memcpy(&condata->analog, conanalog, sizeof(ControllerAnalog_t));
 	condata->digital.charging_grip = 1;
-	condata->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
+	condata->timestamp = (to_ms_since_boot(get_absolute_time()) >> 2) & 0xFF;
 	condata->battery_level = battery_level_charging | battery_level_full;
 	condata->connection_info = 0x1; // Procon being powered by Switch
 	condata->rumble_input_report = 0x70;
@@ -263,6 +263,7 @@ static void output_report_0x01_readspi(uint8_t const *buf, uint8_t *usb_out_buf)
 	resp->subcommand_ack = 0x90;
 	resp->subcommand = 0x10;
 	resp->addr = addr;
+	resp->length = len;
 
 	spi_read(addr, len, resp->spi_data);
 }
