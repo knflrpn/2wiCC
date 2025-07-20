@@ -23,7 +23,13 @@
  *
  */
 
+#ifndef _2WICC_H_
+#define _2WICC_H_
+
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include "pico/time.h"
 #include "ws2812.pio.h"
 
 #define VERSION_NUMBER "1.0"
@@ -46,30 +52,22 @@ enum {
 	A_BUF,  // play from buffer
 };
 
-// Serial control information
-enum {
-    C_IDLE,        // nothing happening
-    C_ACTIVATED,   // activated by command character
-    C_Q,           // receiving a controller state for queue
-    C_I,           // receiving an immediate controller state
-	C_F,           // request for queue buffer fill amount
-	C_M,           // mode change
-	C_R,           // request to read from record buffer 
-	C_D            // receiving a new delay value
-};
-
 #define CON_BUF_SIZE 1024
+#define REC_BUFF_SIZE 1024
 
 #define CMD_CHAR '+'
 #define CMD_STR_LEN 64
 
 #define VSYNC_IN_PIN 14
+#define UART_TX_PIN PICO_DEFAULT_UART_TX_PIN
+#define UART_RX_PIN PICO_DEFAULT_UART_RX_PIN
 
 typedef void (*cmd_fn_t)(const char *arg);
 typedef struct
 {
 	const char *name;
 	cmd_fn_t fn;
+	uint8_t name_len;
 } command_t;
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -99,43 +97,4 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b)
 void hid_task(void);
 void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
 
-
-static void alarm_in_us(uint32_t delay_us);
-
-//--------------------------------------------------------------------
-// Function Predeclarations
-//--------------------------------------------------------------------
-
-// Utility functions
-uint8_t hex2byte(const char *ch);
-void uart_resp_int(const char *header, unsigned int msg);
-
-// UART command handlers
-static void cmd_queuedigital(const char *arg);
-static void cmd_queuefull(const char *arg);
-static void cmd_id(const char *arg);
-static void cmd_ver(const char *arg);
-static void cmd_getconnectionstatus(const char *arg);
-static void cmd_setplaymode(const char *arg);
-static void cmd_getqueueremaining(const char *arg);
-static void cmd_getqueuesize(const char *arg);
-static void cmd_echo(const char *arg);
-static void cmd_vsync_en(const char *arg);
-static void cmd_set_frame_delay(const char *cstr);
-
-// UART communication
-static void on_uart_rx(void);
-
-// Timer and interrupt handlers
-static void alarm_irq(void);
-static void alarm_in_us(uint32_t delay_us);
-void gpio_callback(uint gpio, uint32_t events);
-
-// Core tasks
-void core1_task(void);
-int main(void);
-
-// USB HID functions
-void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
-void hid_task(void);
-
+#endif

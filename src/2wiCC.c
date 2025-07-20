@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <ctype.h>
 #include "pico/stdlib.h"
-#include "hardware/spi.h"
 #include "hardware/pio.h"
 #include "hardware/timer.h"
 #include "pico/time.h"
@@ -20,63 +19,70 @@ uint8_t global_imu[36];
 
 uint8_t play_mode = A_RT;
 
+#define FRAME_TIME_US 16666 // 60 FPS
+static uint32_t next_frame_time = 0;
 static bool vsync_en = false;
 static uint32_t frame_delay_us = 10000; // delay from vsync to con state update
 
 static bool usb_connected = false;
 static bool led_on = true;
 
-/* TODO
+ControllerDigital_t rec_digital_buff[REC_BUFF_SIZE];
+ControllerAnalog_t rec_analog_buff[REC_BUFF_SIZE];
+uint8_t rec_rle_buff[REC_BUFF_SIZE]; // run length encoding buffer
+uint16_t rec_head = 0;
+uint16_t stream_head = 0;
+bool recording = false;
+bool recording_wrap = false;
 
-			// Get recording buffer remaining
-			if (strncmp(cmd_str, "GRR ", 4) == 0)
-			{
-				/*
-				// If recording has wrapped, it is empty
-				if (recording_wrap) {
-					uart_resp_int("GRR", (unsigned int)(0));
-				} else {
-					uart_resp_int("GRR", (unsigned int)(REC_BUFF_LEN - rec_head));
-				}
+//--------------------------------------------------------------------
+// Function forward declarations
+//--------------------------------------------------------------------
 
-			}
-			// Get total recording buffer size
-			if (strncmp(cmd_str, "GRB ", 4) == 0)
-			{
-				/*
-				// If recording has wrapped, it is empty
-				uart_resp_int("GRB", (unsigned int)(REC_BUFF_LEN));
+// Utility functions
+uint8_t hex2byte(const char *ch);
+void uart_resp_int(const char *header, unsigned int msg);
 
-			}
+// UART command handlers
+static void cmd_queuedigital(const char *arg);
+static void cmd_queuefull(const char *arg);
+static void cmd_id(const char *arg);
+static void cmd_ver(const char *arg);
+static void cmd_getconnectionstatus(const char *arg);
+static void cmd_setplaymode(const char *arg);
+static void cmd_getqueueremaining(const char *arg);
+static void cmd_getqueuesize(const char *arg);
+static void cmd_echo(const char *arg);
+static void cmd_vsync_en(const char *arg);
+static void cmd_set_frame_delay(const char *cstr);
+static void cmd_recording(const char *arg);
+static void cmd_getrecordingfullness(const char *arg);
+static void cmd_getrecordingremaining(const char *arg);
+static void cmd_getrecordingbuffersize(const char *arg);
+static void cmd_getrecording(const char *arg);
 
-			// Retrieve recording
-			if (strncmp(cmd_str, "GR ", 3) == 0)
-			{
-				/*
-				if (cmd_str[3] == '0') {
-					// Start at beginning
-					if (recording_wrap) {
-						// If wrapped, oldest value is just in front of head
-						stream_head = (rec_head + 1) % REC_BUFF_LEN;
-					} else {
-						stream_head = 0;
-					}
-				}
-				send_recording();
-				if (stream_head == rec_head)
-				{
-					// end of stream, entire recording has been sent
-					uart_puts(uart0, "+GR 0\r\n");
-				}
-				else
-				{
-					// end of stream but more is pending
-					uart_puts(uart0, "+GR 1\r\n");
-				}
+// UART communication
+static void on_uart_rx(void);
 
-			}
+// Timer and interrupt handlers
+static void alarm_irq(void);
+static uint32_t alarm_in_us(uint32_t delay_us);
+static void alarm_at_us(uint32_t delay_us);
+void gpio_callback(uint gpio, uint32_t events);
 
-*/
+// Core tasks
+void core1_task(void);
+int main(void);
+
+// USB HID functions
+void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
+void hid_task(void);
+
+// Recording functions
+static bool are_controllers_equal(const ControllerDigital_t *dig1, const ControllerAnalog_t *ana1,
+								  const ControllerDigital_t *dig2, const ControllerAnalog_t *ana2);
+static void send_recording_entry(uint16_t index);
+static void update_recording(void);
 
 //--------------------------------------------------------------------
 // UART Commands
@@ -117,6 +123,9 @@ void uart_resp_int(const char *header, unsigned int msg)
 // Add digital controller state to the queue
 static void cmd_queuedigital(const char *arg)
 {
+	if (strlen(arg) < 6)
+		return; // Not enough data
+
 	// Calculate what the new head position would be
 	uint16_t new_head = (conbuf_head + 1) % CON_BUF_SIZE;
 
@@ -143,6 +152,9 @@ static void cmd_queuedigital(const char *arg)
 // Add full controller state to the queue
 static void cmd_queuefull(const char *arg)
 {
+	if (strlen(arg) < 18)
+		return; // Not enough data
+
 	// Calculate what the new head position would be
 	uint16_t new_head = (conbuf_head + 1) % CON_BUF_SIZE;
 
@@ -205,7 +217,7 @@ static void cmd_setplaymode(const char *arg)
 	}
 }
 
-// Get the queue fullness
+// Get the queue space remaining
 static void cmd_getqueueremaining(const char *arg)
 {
 	uint16_t free_amt = (conbuf_tail + CON_BUF_SIZE - conbuf_head - 1) % CON_BUF_SIZE;
@@ -239,9 +251,8 @@ static void cmd_vsync_en(const char *arg)
 		vsync_en = false;
 		// Disable GPIO interrupt
 		gpio_set_irq_enabled(VSYNC_IN_PIN, GPIO_IRQ_EDGE_RISE, false);
-		// Call the timer interrupt to update con state and restart
-		// timer-based updates.
-		alarm_irq();
+		// Resume timer-based updates
+		next_frame_time = alarm_in_us(FRAME_TIME_US);
 	}
 }
 
@@ -294,25 +305,119 @@ static void cmd_set_frame_delay(const char *cstr)
 	return; // success
 }
 
+/* Start/stop recording
+ */
+static void cmd_recording(const char *arg)
+{
+	if (arg[0] == '1')
+	{
+		// Start recording
+		rec_head = 0;
+		recording_wrap = false;
+		// Initialize with current controller state
+		memcpy(&rec_digital_buff[rec_head], &digital_buffer[conbuf_tail], sizeof(ControllerDigital_t));
+		memcpy(&rec_analog_buff[rec_head], &analog_buffer[conbuf_tail], sizeof(ControllerAnalog_t));
+		rec_rle_buff[rec_head] = 1;
+		recording = true;
+		uart_puts(uart0, "+REC 1\r\n");
+	}
+	else
+	{
+		recording = false;
+		uart_puts(uart0, "+REC 0\r\n");
+	}
+}
+
+/* Get recording buffer remaining space
+ */
+static void cmd_getrecordingremaining(const char *arg)
+{
+	unsigned int remaining;
+	if (recording_wrap)
+	{
+		remaining = 0;
+	}
+	else
+	{
+		remaining = REC_BUFF_SIZE - rec_head;
+	}
+	uart_resp_int("GRR", remaining);
+}
+
+/* Get total recording buffer size
+ */
+static void cmd_getrecordingbuffersize(const char *arg)
+{
+	uart_resp_int("GRS", REC_BUFF_SIZE);
+}
+
+/* Send recording data
+ */
+static void cmd_getrecording(const char *arg)
+{
+	if (arg[0] == '0')
+	{
+		// Start at beginning
+		if (recording_wrap)
+		{
+			// If wrapped, oldest value is just in front of head
+			stream_head = (rec_head + 1) % REC_BUFF_SIZE;
+		}
+		else
+		{
+			stream_head = 0;
+		}
+	}
+
+	// Send up to 30 entries at a time to avoid overwhelming UART
+	for (uint8_t i = 0; i < 30 && stream_head != rec_head; i++)
+	{
+		send_recording_entry(stream_head);
+		stream_head = (stream_head + 1) % REC_BUFF_SIZE;
+	}
+
+	// Send current entry if we've reached the head
+	if (stream_head == rec_head)
+	{
+		send_recording_entry(stream_head);
+		uart_puts(uart0, "+GR 0\r\n"); // End of stream
+	}
+	else
+	{
+		uart_puts(uart0, "+GR 1\r\n"); // More data pending
+	}
+}
+
+static void cmd_setled(const char *arg)
+{
+	led_on = arg[0] != '0';
+	if (!led_on)
+		debug_pixel(urgb_u32(0, 0, 0));
+}
+
 static const command_t commands[] = {
 	// Make sure the trailing space is present.
-	{"QD ", cmd_queuedigital},
-	{"QF ", cmd_queuefull},
-	{"SPM ", cmd_setplaymode},
-	{"GQR", cmd_getqueueremaining},
-	{"GQS", cmd_getqueuesize},
-	{"ID ", cmd_id},
-	{"VER ", cmd_ver},
-	{"GCS ", cmd_getconnectionstatus},
-	{"ECHO ", cmd_echo},
-	{"VSYNC ", cmd_vsync_en},
-	{"VSD ", cmd_set_frame_delay},
+	{"QF ", cmd_queuefull, 3},
+	{"QD ", cmd_queuedigital, 3},
+	{"ID ", cmd_id, 3},
+	{"VER ", cmd_ver, 4},
+	{"SPM ", cmd_setplaymode, 4},
+	{"GQR", cmd_getqueueremaining, 4},
+	{"GQS", cmd_getqueuesize, 4},
+	{"GCS ", cmd_getconnectionstatus, 4},
+	{"VSYNC ", cmd_vsync_en, 6},
+	{"VSD ", cmd_set_frame_delay, 4},
+	{"REC ", cmd_recording, 4},
+	{"GRR ", cmd_getrecordingremaining, 4},
+	{"GRS ", cmd_getrecordingbuffersize, 4},
+	{"GR ", cmd_getrecording, 3},
+	{"LED ", cmd_setled, 4},
+	{"ECHO ", cmd_echo, 5},
 };
 
 // Each time a character is received, process it.
 static void on_uart_rx()
 {
-	static int cmd_state = C_IDLE;
 	static char cmd_buf[CMD_STR_LEN]; // incoming command string
 	static uint8_t incoming_idx = 0;  // index into incoming string
 
@@ -332,9 +437,11 @@ static void on_uart_rx()
 			if (incoming_idx > 1)
 			{
 				// Copy to the command string
+				if (incoming_idx >= CMD_STR_LEN)
+					incoming_idx = (CMD_STR_LEN - 1);
 				strncpy(cmd_str, cmd_buf, incoming_idx);
 				// Ensure null termination
-				cmd_str[incoming_idx + 1] = '\0';
+				cmd_str[incoming_idx] = '\0';
 				// Flag the parser
 				command_ready = true;
 			}
@@ -364,7 +471,8 @@ static void alarm_irq(void)
 	// If in realtime mode, set a timeout.
 	if (!vsync_en)
 	{
-		alarm_in_us(16666);
+		next_frame_time += FRAME_TIME_US;
+		alarm_at_us(next_frame_time);
 	}
 
 	if (collision_count > 20)
@@ -399,30 +507,65 @@ static void alarm_irq(void)
 	// Insert updated state into data
 	insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
 
+	// If recording, insert into recording buffer
+	if (recording)
+		update_recording();
+
 	heartbeat++;
 	if (led_on)
 	{
-		uint8_t hb = (((heartbeat % 64) == 0) * 20 +
-					  ((heartbeat % 64) == 1) * 5 +
-					  ((heartbeat % 64) == 11) * 200 +
-					  ((heartbeat % 64) == 12) * 50 +
-					  ((heartbeat % 64) == 13) * 10);
-		debug_pixel(urgb_u32(hb, 0, usb_connected * 4));
+		uint8_t cycle_pos = heartbeat % 64;
+		uint8_t intensity = 0;
+
+		switch (cycle_pos)
+		{
+		case 0:
+			intensity = 20;
+			break;
+		case 1:
+			intensity = 5;
+			break;
+		case 11:
+			intensity = 200;
+			break;
+		case 12:
+			intensity = 50;
+			break;
+		case 13:
+			intensity = 10;
+			break;
+		}
+
+		debug_pixel(urgb_u32(intensity, 0, usb_connected * 4));
 	}
 }
 
 /* Set up an alarm in the future.
+ * Returns the timer value that the alarm is set to.
  */
-static void alarm_in_us(uint32_t delay_us)
+static uint32_t alarm_in_us(uint32_t delay_us)
 {
 	// Enable the alarm irq
 	irq_set_enabled(TIMER_IRQ_0, true);
-	// Enable interrupt in block and at processor
-	uint64_t target = timer_hw->timerawl + delay_us;
+
+	// Write the lower 32 bits of the target time to the alarm,
+	// which will arm it
+	uint32_t target = timer_hw->timerawl + delay_us;
+	timer_hw->alarm[0] = (uint32_t)target;
+
+	return target;
+}
+
+/* Set up an alarm at a specific time.
+ */
+static void alarm_at_us(uint32_t time_us)
+{
+	// Enable the alarm irq
+	irq_set_enabled(TIMER_IRQ_0, true);
 
 	// Write the lower 32 bits of the target time to the alarm, which
 	// will arm it
-	timer_hw->alarm[0] = (uint32_t)target;
+	timer_hw->alarm[0] = time_us;
 }
 
 void core1_task()
@@ -431,8 +574,8 @@ void core1_task()
 	// Set up UART with a 2wiCC standard baud rate.
 	uart_init(uart0, 460800u);
 	// Configure the TX and RX pins
-	gpio_set_function(PICO_DEFAULT_UART_TX_PIN, UART_FUNCSEL_NUM(uart0, PICO_DEFAULT_UART_TX_PIN));
-	gpio_set_function(PICO_DEFAULT_UART_RX_PIN, UART_FUNCSEL_NUM(uart0, PICO_DEFAULT_UART_RX_PIN));
+	gpio_set_function(UART_TX_PIN, UART_FUNCSEL_NUM(uart0, UART_TX_PIN));
+	gpio_set_function(UART_RX_PIN, UART_FUNCSEL_NUM(uart0, UART_RX_PIN));
 
 	// Turn off UART flow control CTS/RTS
 	uart_set_hw_flow(uart0, false, false);
@@ -451,7 +594,7 @@ void core1_task()
 	// Set irq handler for alarm irq
 	irq_set_exclusive_handler(TIMER_IRQ_0, alarm_irq);
 	// Start timer-based controller updates
-	alarm_in_us(200000);
+	next_frame_time = alarm_in_us(200000);
 
 	while (1)
 	{
@@ -461,9 +604,9 @@ void core1_task()
 			// Check against the list of commands
 			for (uint8_t i = 0; i < ARRAY_SIZE(commands); i++)
 			{
-				if (strncmp(cmd_str, commands[i].name, strlen(commands[i].name)) == 0)
+				if (strncmp(cmd_str, commands[i].name, commands[i].name_len) == 0)
 				{
-					const char *arg = cmd_str + strlen(commands[i].name);
+					const char *arg = cmd_str + commands[i].name_len;
 					commands[i].fn(arg);
 					cmd_str[0] = '\0';
 					break;
@@ -715,4 +858,93 @@ void gpio_callback(uint gpio, uint32_t events)
 {
 	// set up an interrupt in the future to change controller data
 	alarm_in_us(frame_delay_us);
+}
+
+//--------------------------------------------------------------------
+// Recording helper functions
+//--------------------------------------------------------------------
+
+/* Check if two controller states are equal for RLE compression
+ */
+static bool are_controllers_equal(const ControllerDigital_t *dig1, const ControllerAnalog_t *ana1,
+								  const ControllerDigital_t *dig2, const ControllerAnalog_t *ana2)
+{
+	// Compare digital data
+	if (memcmp(dig1, dig2, sizeof(ControllerDigital_t)) != 0)
+		return false;
+
+	// Compare analog data
+	if (memcmp(ana1, ana2, sizeof(ControllerAnalog_t)) != 0)
+		return false;
+
+	return true;
+}
+
+/* Send a single recording entry via UART
+ */
+static void send_recording_entry(uint16_t index)
+{
+	static char msgstr[5];
+
+	// Header
+	uart_puts(uart0, "+R ");
+
+	// Digital data (3 bytes as hex)
+	uint8_t *dig_bytes = (uint8_t *)&rec_digital_buff[index];
+	sprintf(msgstr, "%02X", dig_bytes[0]);
+	uart_puts(uart0, msgstr);
+	sprintf(msgstr, "%02X", dig_bytes[1]);
+	uart_puts(uart0, msgstr);
+	sprintf(msgstr, "%02X", dig_bytes[2]);
+	uart_puts(uart0, msgstr);
+
+	// Analog data (6 bytes as hex)
+	uint8_t *ana_bytes = (uint8_t *)&rec_analog_buff[index];
+	for (int i = 0; i < 6; i++)
+	{
+		sprintf(msgstr, "%02X", ana_bytes[i]);
+		uart_puts(uart0, msgstr);
+	}
+
+	// RLE count
+	uart_puts(uart0, "x");
+	sprintf(msgstr, "%02X", rec_rle_buff[index]);
+	uart_puts(uart0, msgstr);
+
+	// Termination
+	uart_puts(uart0, "\r\n");
+}
+
+/* Update recording buffer - call this in alarm_irq() function
+ * Add this code after the controller state update in alarm_irq()
+ */
+static void update_recording()
+{
+	// Get current controller state
+	ControllerDigital_t *current_dig = &digital_buffer[conbuf_tail];
+	ControllerAnalog_t *current_ana = &analog_buffer[conbuf_tail];
+
+	// Implement run-length encoding
+	if ((rec_rle_buff[rec_head] < 240) &&
+		are_controllers_equal(&rec_digital_buff[rec_head], &rec_analog_buff[rec_head],
+							  current_dig, current_ana))
+	{
+		// Same state, increment RLE count
+		rec_rle_buff[rec_head]++;
+	}
+	else
+	{
+		// State changed or max RLE reached, move to next buffer entry
+		rec_head++;
+		if (rec_head >= REC_BUFF_SIZE)
+		{
+			rec_head = 0;
+			recording_wrap = true;
+		}
+
+		// Copy new state to record buffer
+		memcpy(&rec_digital_buff[rec_head], current_dig, sizeof(ControllerDigital_t));
+		memcpy(&rec_analog_buff[rec_head], current_ana, sizeof(ControllerAnalog_t));
+		rec_rle_buff[rec_head] = 1;
+	}
 }
