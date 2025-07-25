@@ -11,11 +11,12 @@
 #include "usb_descriptors.h"
 #include "procon_functions.c"
 
-ControllerData_t con_data;
+ControllerDataReport_t con_report;
+ControllerData_t *con_data = &con_report.controller_data; // Pointer for normal constate
 ControllerDigital_t digital_buffer[CON_BUF_SIZE];
 ControllerAnalog_t analog_buffer[CON_BUF_SIZE];
 uint16_t conbuf_head, conbuf_tail = 0;
-uint8_t global_imu[36];
+uint8_t imu_pose_data[12]; // Single IMU sample: 6 bytes accel + 6 bytes gyro
 
 uint8_t play_mode = A_RT;
 
@@ -77,6 +78,7 @@ int main(void);
 // USB HID functions
 void parse_usb(uint8_t const *current_usb_buf, uint16_t len);
 void hid_task(void);
+void update_imu_data_in_report(void);
 
 // Recording functions
 static bool are_controllers_equal(const ControllerDigital_t *dig1, const ControllerAnalog_t *ana1,
@@ -395,10 +397,43 @@ static void cmd_setled(const char *arg)
 		debug_pixel(urgb_u32(0, 0, 0));
 }
 
+/* Set IMU data - 12 bytes (6 accel + 6 gyro)
+ */
+static void cmd_setimu(const char *arg)
+{
+	if (strlen(arg) < 24)
+		return; // Not enough data - need 24 hex chars for 12 bytes
+
+	// Parse 12 bytes of IMU data (6 accel + 6 gyro)
+	for (int i = 0; i < 12; i++)
+	{
+		imu_pose_data[i] = hex2byte(arg + (i * 2));
+	}
+}
+
+/* Add full controller state including IMU to the queue
+ */
+static void cmd_queuefull_imu(const char *arg)
+{
+	if (strlen(arg) < 42)
+		return; // Not enough data - need 42 hex chars total
+
+	// Insert normal controller state.
+	cmd_queuefull(arg);
+
+	// Twelve bytes of IMU data
+	for (int i = 0; i < 12; i++)
+	{
+		imu_pose_data[i] = hex2byte(arg + 18 + (i * 2));
+	}
+}
+
 static const command_t commands[] = {
 	// Make sure the trailing space is present.
 	{"QF ", cmd_queuefull, 3},
 	{"QD ", cmd_queuedigital, 3},
+	{"QFI ", cmd_queuefull_imu, 4},
+	{"SI ", cmd_setimu, 3},
 	{"ID ", cmd_id, 3},
 	{"VER ", cmd_ver, 4},
 	{"SPM ", cmd_setplaymode, 4},
@@ -505,7 +540,8 @@ static void alarm_irq(void)
 		}
 	}
 	// Insert updated state into data
-	insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+	insert_constate_to_condata(con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+	update_imu_data_in_report();
 
 	// If recording, insert into recording buffer
 	if (recording)
@@ -619,6 +655,24 @@ void core1_task()
 	}
 }
 
+void update_imu_data_in_report(void)
+{
+    if (imu_enabled)
+    {
+        // Copy the current IMU data to the report
+        // The Switch expects 3 IMU samples (12 bytes each = 36 bytes total)
+        for (int sample = 0; sample < 3; sample++)
+        {
+            memcpy(&con_report.imu_data[sample * 12], imu_pose_data, 12);
+        }
+    }
+    else
+    {
+        // Clear IMU data when disabled
+        memset(con_report.imu_data, 0, sizeof(con_report.imu_data));
+    }
+}
+
 int main()
 {
 	// Start second core (handles comms)
@@ -633,10 +687,11 @@ int main()
 	// Set up USB
 	tusb_init();
 
-	current_controller_data = &con_data;
+	current_controller_data = con_data; // points to controller_data within con_report
 	set_neutral_analog(&analog_buffer[conbuf_tail]);
 	digital_buffer[conbuf_tail].charging_grip = 1;
-	conbuf_head = 1;
+	// Initialize IMU data to zeros
+	memset(con_report.imu_data, 0, sizeof(con_report.imu_data));
 
 	while (true)
 	{
@@ -759,70 +814,14 @@ void hid_task(void)
 			// Offer initial connection report
 			const uint8_t response_h[] = {
 				// Hi, I'm a pro controller with KNfLrPn's controller's MAC
-				0x81,
-				0x01,
-				0x00,
-				0x03,
-				0xe6,
-				0x91,
-				0x3e,
-				0xc9,
-				0xb5,
-				0x64,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
+				0x81, 0x01, 0x00, 0x03, 0xe6, 0x91, 0x3e, 0xc9,
+				0xb5, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 			};
 			memcpy(usb_special_buf, response_h, sizeof(response_h));
 			special_report_pending = true;
@@ -835,8 +834,9 @@ void hid_task(void)
 			if (polling_mode == 0x30)
 			{ // 0x30 is full polling mode
 				// Generate a normal report
-				insert_constate_to_condata(&con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
-				tud_hid_report(0x30, &con_data, 0x3F);
+				insert_constate_to_condata(con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
+				update_imu_data_in_report();
+				tud_hid_report(0x30, &con_report, 0x3F);
 				last_report_time = current_time;
 			}
 		}

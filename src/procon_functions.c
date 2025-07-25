@@ -1,7 +1,7 @@
 #include "usb_descriptors.h"
 #include "procon_functions.h"
 
-static ControllerData_t* current_controller_data;
+static ControllerData_t *current_controller_data;
 uint8_t usb_special_buf[0x40]; // Buffer for special messages
 uint8_t usb_norm_buf[0x40];	   // Buffer for normal messages
 uint8_t polling_mode = 0;
@@ -12,7 +12,7 @@ bool special_report_pending = false;
 bool special_report_queued = false;
 uint32_t last_report_time = 0;
 
-void set_neutral_analog(ControllerAnalog_t* analogstate)
+void set_neutral_analog(ControllerAnalog_t *analogstate)
 {
 	analogstate->analog[0] = 0x00;
 	analogstate->analog[1] = 0x08;
@@ -23,14 +23,15 @@ void set_neutral_analog(ControllerAnalog_t* analogstate)
 }
 
 // Copy a provided controller state (digital and analog) to a controller data.
-void insert_constate_to_condata(ControllerData_t* condata, ControllerDigital_t* condigital, ControllerAnalog_t* conanalog) {
-    memcpy(&condata->digital, condigital, sizeof(ControllerDigital_t));
-    memcpy(&condata->analog, conanalog, sizeof(ControllerAnalog_t));
+void insert_constate_to_condata(ControllerData_t *condata, ControllerDigital_t *condigital, ControllerAnalog_t *conanalog)
+{
+	memcpy(&condata->digital, condigital, sizeof(ControllerDigital_t));
+	memcpy(&condata->analog, conanalog, sizeof(ControllerAnalog_t));
 	condata->digital.charging_grip = 1;
 	condata->timestamp = (to_ms_since_boot(get_absolute_time()) >> 2) & 0xFF;
 	condata->battery_level = battery_level_charging | battery_level_full;
 	condata->connection_info = 0x1; // Procon being powered by Switch
-	condata->rumble_input_report = 0x70;
+	condata->rumble_input_report = 0x09;
 }
 
 /* see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md */
@@ -43,29 +44,34 @@ void insert_constate_to_condata(ControllerData_t* condata, ControllerDigital_t* 
  */
 void spi_read(uint16_t addr, uint8_t len, uint8_t *buffer)
 {
-    if (!buffer || len == 0) {
-        return;
-    }
+	if (!buffer || len == 0)
+	{
+		return;
+	}
 
-    const uint16_t base2000 = 0x2000u;
-    const uint16_t base6000 = 0x6000u;
-    const uint16_t size2000 = sizeof(spi0x2000);
-    const uint16_t size6000 = sizeof(spi0x6000);
-    const uint16_t end2000 = base2000 + size2000;
-    const uint16_t end6000 = base6000 + size6000;
+	const uint16_t base2000 = 0x2000u;
+	const uint16_t base6000 = 0x6000u;
+	const uint16_t size2000 = sizeof(spi0x2000);
+	const uint16_t size6000 = sizeof(spi0x6000);
+	const uint16_t end2000 = base2000 + size2000;
+	const uint16_t end6000 = base6000 + size6000;
 
-    for (uint8_t i = 0; i < len; ++i) {
-        uint16_t addr16 = (uint16_t)addr + i;
-        uint8_t value = 0xFF;
+	for (uint8_t i = 0; i < len; ++i)
+	{
+		uint16_t addr16 = (uint16_t)addr + i;
+		uint8_t value = 0xFF;
 
-        if (addr16 >= base2000 && addr16 < end2000) {
-            value = spi0x2000[addr16 - base2000];
-        } else if (addr16 >= base6000 && addr16 < end6000) {
-            value = spi0x6000[addr16 - base6000];
-        }
+		if (addr16 >= base2000 && addr16 < end2000)
+		{
+			value = spi0x2000[addr16 - base2000];
+		}
+		else if (addr16 >= base6000 && addr16 < end6000)
+		{
+			value = spi0x6000[addr16 - base6000];
+		}
 
-        buffer[i] = value;
-    }
+		buffer[i] = value;
+	}
 }
 
 void spi_write(uint16_t addr, uint8_t len, uint8_t const *buffer)
@@ -79,27 +85,16 @@ void spi_erase(uint16_t addr, uint8_t len)
 }
 
 /* Inserts the common controller data into the provided report */
-static void fill_input_report(ControllerData_t* controller_data)
+static void fill_input_report(ControllerData_t *controller_data)
 {
 	memcpy(controller_data, current_controller_data, sizeof(struct ControllerData));
 
 	controller_data->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
 	controller_data->battery_level = battery_level_charging | battery_level_full;
 	controller_data->connection_info = 0x1;
-	controller_data->rumble_input_report = 0x70;
-
+	// Don't know what the rumble byte means, but my controller sends mostly 9, A, B, and C.
+	controller_data->rumble_input_report = 0x09;
 }
-
-/* 0x30 is the full report with IMU data. */
-/*
-static void input_report_0x30(uint8_t const *usb_in, uint8_t *usb_out_buf)
-{
-	// report ID
-	usb_out_buf[0x00] = 0x30;
-
-	fill_input_report((struct ControllerData *)&usb_out_buf[0x01]);
-}
-*/
 
 /* Used to ignore controller internal UART commands */
 static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
@@ -194,10 +189,9 @@ static void output_report_0x01_unknown_subcmd(uint8_t const *buf, uint8_t *usb_o
 static void output_report_0x01_0x08_lowpower_state(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	unsigned char rawData[64] = {
-		0x21,0x06,0x8E,0x84,0x00,0x12,0x01,0x18,
-		0x80,0x01,0x18,0x80,0x80,0x80,0x08,0x00,
-		0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-	};
+		0x21, 0x06, 0x8E, 0x84, 0x00, 0x12, 0x01, 0x18,
+		0x80, 0x01, 0x18, 0x80, 0x80, 0x80, 0x08, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 	static int iii = 0;
 	rawData[0x01] = iii++;
 	memcpy(usb_out_buf, rawData, sizeof(rawData));
@@ -301,6 +295,9 @@ static void output_report_0x01_set_lights(uint8_t const *buf, uint8_t *usb_out_b
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;
+	// acknowledge
+	resp->subcommand_ack = 0x80;
+	resp->subcommand = 0x30;
 	fill_input_report(&resp->controller_data);
 }
 
@@ -310,6 +307,9 @@ static void output_report_0x01_set_homelight(uint8_t const *buf, uint8_t *usb_ou
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;
+	// acknowledge
+	resp->subcommand_ack = 0x80;
+	resp->subcommand = 0x38;
 	fill_input_report(&resp->controller_data);
 }
 
@@ -318,9 +318,13 @@ static void output_report_0x01_enable_imu(uint8_t const *buf, uint8_t *usb_out_b
 {
 	imu_enabled = buf[11];
 
+	// 99 91 00 80 00 00 08 80 00 08 80 09 90 10 20 60 00 00 18 00 00 00 00 00 01 00 40 00 40 00 40 00 00 00 00 00 00 e7 3b e7 3b e7 3b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;
+	// acknowledge
+	resp->subcommand_ack = 0x80;
+	resp->subcommand = 0x40;
 	fill_input_report(&resp->controller_data);
 }
 
@@ -330,6 +334,9 @@ static void output_report_0x01_set_imu_sensitivity(uint8_t const *buf, uint8_t *
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;
+	// acknowledge
+	resp->subcommand_ack = 0x80;
+	resp->subcommand = 0x41;
 	fill_input_report(&resp->controller_data);
 }
 
@@ -339,7 +346,7 @@ static void output_report_0x01_set_vibration(uint8_t const *buf, uint8_t *usb_ou
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;
-
+	// acknowledge
 	resp->subcommand_ack = 0x80;
 	resp->subcommand = 0x48;
 
