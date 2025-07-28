@@ -9,8 +9,9 @@
 
 #include "tusb.h"
 #include "usb_descriptors.h"
-#include "procon_functions.c"
+#include "procon_functions.h"
 
+//static ControllerData_t *current_controller_data;
 ControllerDataReport_t con_report;
 ControllerData_t *con_data = &con_report.controller_data; // Pointer for normal constate
 ControllerDigital_t digital_buffer[CON_BUF_SIZE];
@@ -687,7 +688,7 @@ int main()
 	// Set up USB
 	tusb_init();
 
-	current_controller_data = con_data; // points to controller_data within con_report
+//	current_controller_data = con_data; // points to controller_data within con_report
 	set_neutral_analog(&analog_buffer[conbuf_tail]);
 	digital_buffer[conbuf_tail].charging_grip = 1;
 	// Initialize IMU data to zeros

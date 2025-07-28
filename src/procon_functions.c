@@ -1,7 +1,9 @@
 #include "usb_descriptors.h"
 #include "procon_functions.h"
+#include "procon_data.h"
+#include <string.h>
+#include "pico/time.h"
 
-static ControllerData_t *current_controller_data;
 uint8_t usb_special_buf[0x40]; // Buffer for special messages
 uint8_t usb_norm_buf[0x40];	   // Buffer for normal messages
 uint8_t polling_mode = 0;
@@ -87,8 +89,6 @@ void spi_erase(uint16_t addr, uint8_t len)
 /* Inserts the common controller data into the provided report */
 static void fill_input_report(ControllerData_t *controller_data)
 {
-	memcpy(controller_data, current_controller_data, sizeof(struct ControllerData));
-
 	controller_data->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
 	controller_data->battery_level = battery_level_charging | battery_level_full;
 	controller_data->connection_info = 0x1;
@@ -142,7 +142,7 @@ static void output_disable_usb_timeout(uint8_t const *usb_in, uint8_t *usb_out_b
 }
 
 /* Check which action has been sent to the 0x80 endpoint */
-static void output_report_0x80(uint8_t const *buf, uint8_t *usb_out_buf)
+void output_report_0x80(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	switch (buf[1])
 	{
@@ -377,13 +377,13 @@ static void output_report_0x01_bt_pairing(uint8_t const *buf, uint8_t *usb_out_b
 }
 
 /* Endpoint 0x10 does nothing here. */
-static void output_report_0x10(uint8_t const *buf, uint8_t *usb_out_buf)
+void output_report_0x10(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	/** nothing **/
 }
 
 /* Reroute the various subcommands of the 0x01 endpoint. */
-static void output_report_0x01(uint8_t const *buf, uint8_t *usb_out_buf)
+void output_report_0x01(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	uint8_t subCmd = buf[10];
 

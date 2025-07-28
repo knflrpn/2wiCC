@@ -37,6 +37,8 @@ pico_sdk_init()
 add_executable(2wiCC
     src/2wiCC.c
     src/usb_descriptors.c
+    src/procon_functions.c
+    src/procon_data.c
 )
 
 pico_set_program_name(2wiCC "2wiCC")

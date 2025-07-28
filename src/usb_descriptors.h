@@ -23,6 +23,8 @@
 #ifndef USB_DESCRIPTORS_H_
 #define USB_DESCRIPTORS_H_
 
+#include <stdint.h>
+
 extern char shared_buf[0x40];
 
 #define TUD_HID_REPORT_DESC_PROCON(...)                                                              \
