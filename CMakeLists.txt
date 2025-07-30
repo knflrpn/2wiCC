@@ -39,6 +39,7 @@ add_executable(2wiCC
     src/usb_descriptors.c
     src/procon_functions.c
     src/procon_data.c
+    src/status_messages.c
 )
 
 pico_set_program_name(2wiCC "2wiCC")

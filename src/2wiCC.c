@@ -1,17 +1,15 @@
 #include <stdio.h>
 #include <ctype.h>
-#include "pico/stdlib.h"
-#include "hardware/pio.h"
 #include "hardware/timer.h"
-#include "pico/time.h"
 #include "pico/multicore.h"
 #include "2wiCC.h"
 
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "procon_functions.h"
+#include "status_messages.h"
 
-//static ControllerData_t *current_controller_data;
+// static ControllerData_t *current_controller_data;
 ControllerDataReport_t con_report;
 ControllerData_t *con_data = &con_report.controller_data; // Pointer for normal constate
 ControllerDigital_t digital_buffer[CON_BUF_SIZE];
@@ -86,6 +84,37 @@ static bool are_controllers_equal(const ControllerDigital_t *dig1, const Control
 								  const ControllerDigital_t *dig2, const ControllerAnalog_t *ana2);
 static void send_recording_entry(uint16_t index);
 static void update_recording(void);
+
+void update_rumble_state(uint8_t const *usb_buf)
+{
+	// usb_buf layout:
+	//   [0]           = timing
+	//   [1..4]        = left  rumble block
+	//   [5..8]        = right rumble block
+	// Within each 4‑byte block (at usb_buf[base..base+3]):
+	//   [base+1]      = HF_amp (mask off lsb)
+	//   [base+3]      = LF_amp (mask off top two bits)
+	// The two words seem always identical for procon except when neutral,
+	// in which case they swap between left and right depending on the
+	// timing byte with the other word being all 0.
+
+	static uint8_t last_rumble = 0;
+
+	const uint16_t hf_amp = usb_buf[2] >> 1;
+
+	// Also going to reduce precision since it's not needed
+	const uint8_t lf_amp = (usb_buf[4] & 0x3F) >> 1;
+
+	// Pack HF in high byte, LF in low byte
+	uint32_t rumble = ((hf_amp & 0xFF) << 8) | (lf_amp & 0xFF);
+
+	// Only send if LF has changed.  HF is too chaotic to include.
+	if (lf_amp != last_rumble)
+	{
+		status_msg_send_with_data(MSG_USB_RUMBLE, rumble);
+		last_rumble = lf_amp;
+	}
+}
 
 //--------------------------------------------------------------------
 // UART Commands
@@ -652,26 +681,29 @@ void core1_task()
 			memset(cmd_str, 0, CMD_STR_LEN);
 			command_ready = false;
 		}
+		// Process status messages from core 0
+		status_msg_process_queue();
+
 		sleep_ms(1);
 	}
 }
 
 void update_imu_data_in_report(void)
 {
-    if (imu_enabled)
-    {
-        // Copy the current IMU data to the report
-        // The Switch expects 3 IMU samples (12 bytes each = 36 bytes total)
-        for (int sample = 0; sample < 3; sample++)
-        {
-            memcpy(&con_report.imu_data[sample * 12], imu_pose_data, 12);
-        }
-    }
-    else
-    {
-        // Clear IMU data when disabled
-        memset(con_report.imu_data, 0, sizeof(con_report.imu_data));
-    }
+	if (imu_enabled)
+	{
+		// Copy the current IMU data to the report
+		// The Switch expects 3 IMU samples (12 bytes each = 36 bytes total)
+		for (int sample = 0; sample < 3; sample++)
+		{
+			memcpy(&con_report.imu_data[sample * 12], imu_pose_data, 12);
+		}
+	}
+	else
+	{
+		// Clear IMU data when disabled
+		memset(con_report.imu_data, 0, sizeof(con_report.imu_data));
+	}
 }
 
 int main()
@@ -688,7 +720,7 @@ int main()
 	// Set up USB
 	tusb_init();
 
-//	current_controller_data = con_data; // points to controller_data within con_report
+	//	current_controller_data = con_data; // points to controller_data within con_report
 	set_neutral_analog(&analog_buffer[conbuf_tail]);
 	digital_buffer[conbuf_tail].charging_grip = 1;
 	// Initialize IMU data to zeros
@@ -785,9 +817,10 @@ void parse_usb(uint8_t const *current_usb_buf, uint16_t len)
 		special_report_pending = true;
 		break;
 	case 0x10: // rumble only
-		// Doesn't do anything. Don't set special report pending, because
-		// it won't get cleared, because there's no response.
+		// Note: don't set special report pending, because this report
+		// doesn't send a response
 		output_report_0x10(current_usb_buf, usb_special_buf);
+		update_rumble_state(current_usb_buf + 1);
 		break;
 
 	case 0x80: // basic HID
@@ -815,14 +848,70 @@ void hid_task(void)
 			// Offer initial connection report
 			const uint8_t response_h[] = {
 				// Hi, I'm a pro controller with KNfLrPn's controller's MAC
-				0x81, 0x01, 0x00, 0x03, 0xe6, 0x91, 0x3e, 0xc9,
-				0xb5, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x81,
+				0x01,
+				0x00,
+				0x03,
+				0xe6,
+				0x91,
+				0x3e,
+				0xc9,
+				0xb5,
+				0x64,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
+				0x00,
 			};
 			memcpy(usb_special_buf, response_h, sizeof(response_h));
 			special_report_pending = true;
