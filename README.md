@@ -47,13 +47,17 @@ The RGB LED provides visual feedback:
 |---------|-----------|-------------|
 | `QD` | 6 hex digits | Queue digital-only controller state (3 bytes) |
 | `QF` | 18 hex digits | Queue full controller state (9 bytes: 3 digital + 6 analog) |
+| `QFI` | 42 hex digits | Full controller state (`QF`) plus IMU data |
 
 **Controller State Format**:
-- Digital (3 bytes): Button states as bitmask (bit 7-0 as a hex character encoded in ASCII)
+- **Digital (3 bytes)**: Button states as bitmask (bit 7-0 as a hex character encoded in ASCII)
     - First byte: [ZR, R, Right SL, Right SR, A, B, X, Y] (bits 7-0)
     - Second byte: [charging_grip, unused, Capture, Home, Left Stick, Right Stick, +, -] (bits 7-0)
     - Third byte: [ZL, L, Left SL, Left SR, D-pad Left, D-pad Right, D-pad Up, D-pad Down] (bits 7-0)
 - **Analog (6 bytes)**: Left stick X, Y, Right stick X, Y, encoded in the Pro Controller data format (see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_notes.md).  Center position is 0x800 and full swing is +/- 0x600.
+- **IMU (12 bytes)**: 16-bit little-endian 2's complement signed value each for X, Y, Z acceleration and X, Y, Z gyro, in that order.  Neutral for all values is 0.
+
+Note that IMU state is not queued; it takes effect immediately after `QFI` is parsed, and persists until the next `QFI`.
 
 ### Playback Mode Commands
 
