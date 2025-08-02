@@ -73,6 +73,7 @@ target_link_libraries(2wiCC
         hardware_spi
         hardware_pio
         hardware_timer
+        hardware_flash
         pico_multicore
         tinyusb_device
         tinyusb_board 

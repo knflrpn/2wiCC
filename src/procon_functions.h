@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <hardware/flash.h>
 #include "usb_descriptors.h"
 
 // Function declarations
@@ -15,6 +16,7 @@ void spi_erase(uint16_t addr, uint8_t len);
 void output_report_0x01(uint8_t const *buf, uint8_t *usb_out_buf);
 void output_report_0x10(uint8_t const *buf, uint8_t *usb_out_buf);
 void output_report_0x80(uint8_t const *buf, uint8_t *usb_out_buf);
+void output_mac_addr(uint8_t const *usb_in, uint8_t *usb_out_buf);
 
 // External variable declarations
 extern uint8_t usb_special_buf[0x40];

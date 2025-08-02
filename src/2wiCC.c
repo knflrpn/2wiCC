@@ -7,6 +7,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "procon_functions.h"
+#include "procon_data.h"
 #include "status_messages.h"
 
 // static ControllerData_t *current_controller_data;
@@ -846,74 +847,7 @@ void hid_task(void)
 		if (current_time - last_report_time > 250)
 		{
 			// Offer initial connection report
-			const uint8_t response_h[] = {
-				// Hi, I'm a pro controller with KNfLrPn's controller's MAC
-				0x81,
-				0x01,
-				0x00,
-				0x03,
-				0xe6,
-				0x91,
-				0x3e,
-				0xc9,
-				0xb5,
-				0x64,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-				0x00,
-			};
-			memcpy(usb_special_buf, response_h, sizeof(response_h));
+			output_mac_addr(usb_special_buf, usb_special_buf);
 			special_report_pending = true;
 			tud_hid_report(usb_special_buf[0], &usb_special_buf[1], 0x3F);
 			last_report_time = current_time;

@@ -103,10 +103,24 @@ static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
 	memcpy(usb_out_buf, response_h, sizeof(response_h));
 }
 
+void fill_unique_id(uint8_t* dest)
+{
+    static const char hexchars[] = "0123456789ABCDEF";
+    uint8_t id[8];
+    flash_get_unique_id(id);
+
+    for (uint8_t i = 0; i < 6; ++i) {
+        dest[2*i + 0] = hexchars[id[i] >> 4];
+        dest[2*i + 1] = hexchars[id[i] & 0x0F];
+    }
+}
+
 /* Response to 80 01. Sends connection status and MAC data */
-static void output_mac_addr(uint8_t const *usb_in, uint8_t *usb_out_buf)
+void output_mac_addr(uint8_t const *usb_in, uint8_t *usb_out_buf)
 {
 	memcpy(usb_out_buf, mac_response, sizeof(mac_response));
+	// Fill a unique MAC
+	fill_unique_id(usb_out_buf + 4);
 }
 
 /* Used to ignore controller internal UART handshaking */
@@ -185,7 +199,7 @@ static void output_report_0x01_unknown_subcmd(uint8_t const *buf, uint8_t *usb_o
 }
 
 /* 0x01 subcommand 0x08: Set shipment low power state.
-   This does nothing to this device, so just send a canned response. */
+   This does nothing to this device, so just send the ack. */
 static void output_report_0x01_0x08_lowpower_state(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	unsigned char rawData[64] = {
@@ -353,10 +367,17 @@ static void output_report_0x01_set_vibration(uint8_t const *buf, uint8_t *usb_ou
 	fill_input_report(&resp->controller_data);
 }
 
-/* 0x01 subcommand 0x01: Manual BT pairing. This will do nothing.*/
+/* 0x01 subcommand 0x01: Manual BT pairing. Does nothing, but sends appropriate response */
 static void output_report_0x01_bt_pairing(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	uint8_t pairing_type = buf[11] /* data->pairing.type */;
+
+	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
+	// report ID
+	usb_out_buf[0x00] = 0x21;
+	// acknowledge
+	resp->subcommand_ack = 0x81;
+	resp->subcommand = 0x01;
 
 	uint8_t *data = (uint8_t *)bt_data_01;
 	switch (pairing_type)
@@ -372,8 +393,11 @@ static void output_report_0x01_bt_pairing(uint8_t const *buf, uint8_t *usb_out_b
 		data = (uint8_t *)bt_data_03;
 		break;
 	}
-	memcpy(usb_out_buf, data, 0x40);
-	fill_input_report((struct ControllerData *)&usb_out_buf[0x01]);
+	memcpy(resp->data, data, 31);
+	// Fill unique MAC
+	if (pairing_type == 1)
+		fill_unique_id(resp->data + 1);
+	fill_input_report(&resp->controller_data);
 }
 
 /* Endpoint 0x10 does nothing here. */
