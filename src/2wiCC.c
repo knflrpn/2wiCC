@@ -710,7 +710,7 @@ void update_imu_data_in_report(void)
 int main()
 {
 	// Initialize controller state.
-	cmd_queuefull_imu("000000000000000000000000000000000000000000");
+	cmd_queuefull_imu("000000000880000880000000000000000000000000");
 	// Start second core (handles comms)
 	multicore_launch_core1(core1_task);
 
