@@ -332,7 +332,6 @@ static void output_report_0x01_enable_imu(uint8_t const *buf, uint8_t *usb_out_b
 {
 	imu_enabled = buf[11];
 
-	// 99 91 00 80 00 00 08 80 00 08 80 09 90 10 20 60 00 00 18 00 00 00 00 00 01 00 40 00 40 00 40 00 00 00 00 00 00 e7 3b e7 3b e7 3b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
 	// report ID
 	usb_out_buf[0x00] = 0x21;

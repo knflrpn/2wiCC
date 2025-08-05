@@ -656,10 +656,10 @@ void core1_task()
 	// Eable the UART to send interrupts (on RX only)
 	uart_set_irq_enables(uart0, true, false);
 
-	// Enable timer interrupts for the alarm
-	hw_set_bits(&timer_hw->inte, 1u << 0);
 	// Set irq handler for alarm irq
 	irq_set_exclusive_handler(TIMER_IRQ_0, alarm_irq);
+	// Enable timer interrupts for the alarm
+	hw_set_bits(&timer_hw->inte, 1u << 0);
 	// Start timer-based controller updates
 	next_frame_time = alarm_in_us(200000);
 
@@ -709,6 +709,8 @@ void update_imu_data_in_report(void)
 
 int main()
 {
+	// Initialize controller state.
+	cmd_queuefull_imu("000000000000000000000000000000000000000000");
 	// Start second core (handles comms)
 	multicore_launch_core1(core1_task);
 
