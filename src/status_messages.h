@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "pico/util/queue.h"
 
 // Message types
 typedef enum
@@ -18,7 +19,14 @@ typedef enum
 	MSG_USB_DEVICE_INFO = 0x02,
 } status_msg_type_t;
 
+// Status message structure
+typedef struct {
+	status_msg_type_t type;
+	uint32_t data;
+} status_msg_t;
+
 // Function declarations
+void status_msg_init(void);
 void status_msg_send(status_msg_type_t type);
 void status_msg_send_with_data(status_msg_type_t type, uint32_t data);
 void status_msg_process_queue(void);

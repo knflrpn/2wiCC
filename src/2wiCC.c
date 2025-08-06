@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ctype.h>
+#include <string.h>
 #include "hardware/timer.h"
 #include "pico/multicore.h"
 #include "2wiCC.h"
@@ -10,12 +11,15 @@
 #include "procon_data.h"
 #include "status_messages.h"
 
-// static ControllerData_t *current_controller_data;
+// Watchdog
+#include "hardware/watchdog.h"
+#define WATCHDOG_TIMEOUT_MS 500
+
 ControllerDataReport_t con_report;
-ControllerData_t *con_data = &con_report.controller_data; // Pointer for normal constate
+ControllerData_t *con_data = &con_report.controller_data;
 ControllerDigital_t digital_buffer[CON_BUF_SIZE];
 ControllerAnalog_t analog_buffer[CON_BUF_SIZE];
-uint16_t conbuf_head, conbuf_tail = 0;
+uint16_t conbuf_head = 0, conbuf_tail = 0;
 uint8_t imu_pose_data[12]; // Single IMU sample: 6 bytes accel + 6 bytes gyro
 
 uint8_t play_mode = A_RT;
@@ -43,6 +47,13 @@ bool recording_wrap = false;
 // Utility functions
 uint8_t hex2byte(const char *ch);
 void uart_resp_int(const char *header, unsigned int msg);
+static bool safe_memcpy(void *dst, const void *src, size_t len)
+{
+	if (!dst || !src)
+		return false;
+	memcpy(dst, src, len);
+	return true;
+}
 
 // UART command handlers
 static void cmd_queuedigital(const char *arg);
@@ -130,6 +141,12 @@ uint8_t hex2byte(const char *ch)
 	// Convert hex digits to number
 	for (uint8_t i = 0; i < 2; i++)
 	{
+		// Enhanced validation
+		if (!isxdigit(ch[i]))
+		{
+			return 0;
+		}
+
 		val = val << 4;		// Shift to next nibble
 		tval = ch[i] - '0'; // Convert ascii number to its value
 		if (tval > 9)
@@ -156,7 +173,7 @@ void uart_resp_int(const char *header, unsigned int msg)
 // Add digital controller state to the queue
 static void cmd_queuedigital(const char *arg)
 {
-	if (strlen(arg) < 6)
+	if (!arg || strlen(arg) < 6)
 		return; // Not enough data
 
 	// Calculate what the new head position would be
@@ -185,7 +202,7 @@ static void cmd_queuedigital(const char *arg)
 // Add full controller state to the queue
 static void cmd_queuefull(const char *arg)
 {
-	if (strlen(arg) < 18)
+	if (!arg || strlen(arg) < 18)
 		return; // Not enough data
 
 	// Calculate what the new head position would be
@@ -348,8 +365,8 @@ static void cmd_recording(const char *arg)
 		rec_head = 0;
 		recording_wrap = false;
 		// Initialize with current controller state
-		memcpy(&rec_digital_buff[rec_head], &digital_buffer[conbuf_tail], sizeof(ControllerDigital_t));
-		memcpy(&rec_analog_buff[rec_head], &analog_buffer[conbuf_tail], sizeof(ControllerAnalog_t));
+		safe_memcpy(&rec_digital_buff[rec_head], &digital_buffer[conbuf_tail], sizeof(ControllerDigital_t));
+		safe_memcpy(&rec_analog_buff[rec_head], &analog_buffer[conbuf_tail], sizeof(ControllerAnalog_t));
 		rec_rle_buff[rec_head] = 1;
 		recording = true;
 		uart_puts(uart0, "+REC 1\r\n");
@@ -432,7 +449,7 @@ static void cmd_setled(const char *arg)
  */
 static void cmd_setimu(const char *arg)
 {
-	if (strlen(arg) < 24)
+	if (!arg || strlen(arg) < 24)
 		return; // Not enough data - need 24 hex chars for 12 bytes
 
 	// Parse 12 bytes of IMU data (6 accel + 6 gyro)
@@ -446,7 +463,7 @@ static void cmd_setimu(const char *arg)
  */
 static void cmd_queuefull_imu(const char *arg)
 {
-	if (strlen(arg) < 42)
+	if (!arg || strlen(arg) < 42)
 		return; // Not enough data - need 42 hex chars total
 
 	// Insert normal controller state.
@@ -540,6 +557,9 @@ static void alarm_irq(void)
 		next_frame_time += FRAME_TIME_US;
 		alarm_at_us(next_frame_time);
 	}
+
+	// Feed the watchdog
+	watchdog_update();
 
 	if (collision_count > 20)
 	{
@@ -635,6 +655,7 @@ static void alarm_at_us(uint32_t time_us)
 	timer_hw->alarm[0] = time_us;
 }
 
+static volatile bool core1_initialized = false;
 void core1_task()
 {
 	stdio_init_all();
@@ -661,13 +682,23 @@ void core1_task()
 	// Enable timer interrupts for the alarm
 	hw_set_bits(&timer_hw->inte, 1u << 0);
 	// Start timer-based controller updates
-	next_frame_time = alarm_in_us(200000);
+	next_frame_time = alarm_in_us(20000);
+	core1_initialized = true;
+
+	// Initialize watchdog for this core
+	if (watchdog_caused_reboot())
+	{
+		uart_puts(uart0, "+ERR WATCHDOG\r\n");
+	}
+	watchdog_enable(WATCHDOG_TIMEOUT_MS, 1);
 
 	while (1)
 	{
 		// Handle incoming UART comms
 		if (command_ready)
 		{
+			// Disable UART interrupts while processing
+			irq_set_enabled(UART0_IRQ, false);
 			// Check against the list of commands
 			for (uint8_t i = 0; i < ARRAY_SIZE(commands); i++)
 			{
@@ -681,11 +712,13 @@ void core1_task()
 			}
 			memset(cmd_str, 0, CMD_STR_LEN);
 			command_ready = false;
+			// Re-enable interrupts
+			irq_set_enabled(UART0_IRQ, true);
 		}
 		// Process status messages from core 0
 		status_msg_process_queue();
 
-		sleep_ms(1);
+		sleep_ms(5);
 	}
 }
 
@@ -697,7 +730,7 @@ void update_imu_data_in_report(void)
 		// The Switch expects 3 IMU samples (12 bytes each = 36 bytes total)
 		for (int sample = 0; sample < 3; sample++)
 		{
-			memcpy(&con_report.imu_data[sample * 12], imu_pose_data, 12);
+			safe_memcpy(&con_report.imu_data[sample * 12], imu_pose_data, 12);
 		}
 	}
 	else
@@ -709,25 +742,25 @@ void update_imu_data_in_report(void)
 
 int main()
 {
-	// Initialize controller state.
-	cmd_queuefull_imu("000000000880000880000000000000000000000000");
-	// Start second core (handles comms)
-	multicore_launch_core1(core1_task);
-
 	// Set up debug neopixel
 	PIO pio = pio0;
 	uint offset = pio_add_program(pio, &ws2812_program);
 	ws2812_program_init(pio, 0, offset, 16, 800000, IS_RGBW);
-	debug_pixel(urgb_u32(0, 0, 1));
+	debug_pixel(urgb_u32(16, 16, 16));
+
+	// Initialize controller state.
+	cmd_queuefull_imu("000000000880000880000000000000000000000000");
+	// Initialize inter-core message queue
+	status_msg_init();
+
+	// Start second core (handles comms)
+	multicore_launch_core1(core1_task);
+	// Wait for core 1
+	while (!core1_initialized)
+		;
 
 	// Set up USB
 	tusb_init();
-
-	//	current_controller_data = con_data; // points to controller_data within con_report
-	set_neutral_analog(&analog_buffer[conbuf_tail]);
-	digital_buffer[conbuf_tail].charging_grip = 1;
-	// Initialize IMU data to zeros
-	memset(con_report.imu_data, 0, sizeof(con_report.imu_data));
 
 	while (true)
 	{
@@ -969,8 +1002,8 @@ static void update_recording()
 		}
 
 		// Copy new state to record buffer
-		memcpy(&rec_digital_buff[rec_head], current_dig, sizeof(ControllerDigital_t));
-		memcpy(&rec_analog_buff[rec_head], current_ana, sizeof(ControllerAnalog_t));
+		safe_memcpy(&rec_digital_buff[rec_head], current_dig, sizeof(ControllerDigital_t));
+		safe_memcpy(&rec_analog_buff[rec_head], current_ana, sizeof(ControllerAnalog_t));
 		rec_rle_buff[rec_head] = 1;
 	}
 }
