@@ -46,7 +46,7 @@ bool recording_wrap = false;
 
 // Utility functions
 uint8_t hex2byte(const char *ch);
-void uart_resp_int(const char *header, unsigned int msg);
+void uart_resp_int(const char *header, uint16_t msg);
 static bool safe_memcpy(void *dst, const void *src, size_t len)
 {
 	if (!dst || !src)
@@ -131,10 +131,60 @@ void update_rumble_state(uint8_t const *usb_buf)
 //--------------------------------------------------------------------
 // UART Commands
 //--------------------------------------------------------------------
-bool command_ready = false;
-char cmd_str[CMD_STR_LEN];
+typedef struct
+{
+	char commands[CMD_RING_BUFFER_SIZE][CMD_STR_LEN];
+	volatile uint8_t head;
+	volatile uint8_t tail;
+} cmd_ring_buffer_t;
+static cmd_ring_buffer_t cmd_buffer = {0};
 
-// Convert 2 hex characters into a byte in a pretty unsafe way.
+static bool cmd_buffer_is_full(void)
+{
+	// Buffer is full when advancing head would equal tail
+	return ((cmd_buffer.head + 1) % CMD_RING_BUFFER_SIZE) == cmd_buffer.tail;
+}
+
+static bool cmd_buffer_is_empty(void)
+{
+	// Buffer is empty when head equals tail
+	return cmd_buffer.head == cmd_buffer.tail;
+}
+
+static bool cmd_buffer_push(const char *cmd)
+{
+	if (cmd_buffer_is_full())
+	{
+		return false; // Buffer full, command dropped
+	}
+
+	// Copy command to the head position
+	strncpy(cmd_buffer.commands[cmd_buffer.head], cmd, CMD_STR_LEN - 1);
+	cmd_buffer.commands[cmd_buffer.head][CMD_STR_LEN - 1] = '\0'; // Ensure null termination
+
+	// Advance head (no count update needed)
+	cmd_buffer.head = (cmd_buffer.head + 1) % CMD_RING_BUFFER_SIZE;
+
+	return true; // Command successfully added
+}
+
+static bool cmd_buffer_pop(char *cmd_out)
+{
+	if (cmd_buffer_is_empty())
+	{
+		return false; // No commands available
+	}
+
+	// Copy command from tail position
+	strcpy(cmd_out, cmd_buffer.commands[cmd_buffer.tail]);
+
+	// Advance tail (no count update needed)
+	cmd_buffer.tail = (cmd_buffer.tail + 1) % CMD_RING_BUFFER_SIZE;
+
+	return true; // Command successfully retrieved
+}
+
+// Convert 2 hex characters into a byte.
 uint8_t hex2byte(const char *ch)
 {
 	int val = 0, tval = 0;
@@ -156,9 +206,9 @@ uint8_t hex2byte(const char *ch)
 	return val;
 }
 
-/* Respond with an integer encoded in hex, starting with + and a header, ending with newline.
+/* Respond with a 16-bit integer encoded in hex, starting with + and a header, ending with newline.
  */
-void uart_resp_int(const char *header, unsigned int msg)
+void uart_resp_int(const char *header, uint16_t msg)
 {
 	char msgstr[5];
 	sprintf(msgstr, "%04X", msg);
@@ -257,11 +307,11 @@ static void cmd_getconnectionstatus(const char *arg)
 
 static void cmd_setplaymode(const char *arg)
 {
-	if (strncmp(arg, "RT", 5) == 0)
+	if (strncmp(arg, "RT", 2) == 0)
 	{
 		play_mode = A_RT;
 	}
-	if (strncmp(arg, "BUF", 5) == 0)
+	if (strncmp(arg, "BUF", 3) == 0)
 	{
 		play_mode = A_BUF;
 	}
@@ -303,6 +353,12 @@ static void cmd_vsync_en(const char *arg)
 		gpio_set_irq_enabled(VSYNC_IN_PIN, GPIO_IRQ_EDGE_RISE, false);
 		// Resume timer-based updates
 		next_frame_time = alarm_in_us(FRAME_TIME_US);
+	}
+	else if (arg[0] == '?')
+	{
+		uart_puts(uart0, "+VSYNC ");
+		uart_putc(uart0, vsync_en ? '1' : '0');
+		uart_puts(uart0, "\r\n");
 	}
 }
 
@@ -382,7 +438,7 @@ static void cmd_recording(const char *arg)
  */
 static void cmd_getrecordingremaining(const char *arg)
 {
-	unsigned int remaining;
+	uint16_t remaining;
 	if (recording_wrap)
 	{
 		remaining = 0;
@@ -419,8 +475,8 @@ static void cmd_getrecording(const char *arg)
 		}
 	}
 
-	// Send up to 30 entries at a time to avoid overwhelming UART
-	for (uint8_t i = 0; i < 30 && stream_head != rec_head; i++)
+	// Send up to 20 entries at a time to avoid overwhelming UART
+	for (uint8_t i = 0; i < 20 && stream_head != rec_head; i++)
 	{
 		send_recording_entry(stream_head);
 		stream_head = (stream_head + 1) % REC_BUFF_SIZE;
@@ -485,8 +541,8 @@ static const command_t commands[] = {
 	{"ID ", cmd_id, 3},
 	{"VER ", cmd_ver, 4},
 	{"SPM ", cmd_setplaymode, 4},
-	{"GQR", cmd_getqueueremaining, 4},
-	{"GQS", cmd_getqueuesize, 4},
+	{"GQR ", cmd_getqueueremaining, 4},
+	{"GQS ", cmd_getqueuesize, 4},
 	{"GCS ", cmd_getconnectionstatus, 4},
 	{"VSYNC ", cmd_vsync_en, 6},
 	{"VSD ", cmd_set_frame_delay, 4},
@@ -498,44 +554,43 @@ static const command_t commands[] = {
 	{"ECHO ", cmd_echo, 5},
 };
 
-// Each time a character is received, process it.
+// Process each incoming character
 static void on_uart_rx()
 {
-	static char cmd_buf[CMD_STR_LEN]; // incoming command string
-	static uint8_t incoming_idx = 0;  // index into incoming string
+	static char incoming_cmd[CMD_STR_LEN]; // Buffer for building incoming command
+	static uint8_t incoming_idx = 0;	   // Index into incoming string
 
 	while (uart_is_readable(uart0))
 	{
 		uint8_t ch = uart_getc(uart0);
 
-		// hard force new action on command character
+		// Hard force new action on command character
 		if (ch == CMD_CHAR)
 		{
-			// reset command string
+			// Reset command string
 			incoming_idx = 0;
 		}
-		// parse the command on newline
+		// Parse the command on newline
 		else if ((ch == '\r') || (ch == '\n'))
 		{
 			if (incoming_idx > 1)
 			{
-				// Copy to the command string
+				// Null terminate the incoming command
 				if (incoming_idx >= CMD_STR_LEN)
-					incoming_idx = (CMD_STR_LEN - 1);
-				strncpy(cmd_str, cmd_buf, incoming_idx);
-				// Ensure null termination
-				cmd_str[incoming_idx] = '\0';
-				// Flag the parser
-				command_ready = true;
+					incoming_idx = CMD_STR_LEN - 1;
+				incoming_cmd[incoming_idx] = '\0';
+
+				// Try to add command to ring buffer
+				cmd_buffer_push(incoming_cmd);
 			}
 			incoming_idx = 0;
 		}
 		else
 		{
-			// add chars to the string
+			// Add chars to the string
 			if (incoming_idx < (CMD_STR_LEN - 1)) // Never fill the final null terminator
 			{
-				cmd_buf[incoming_idx++] = ch;
+				incoming_cmd[incoming_idx++] = ch;
 			}
 		}
 	}
@@ -694,27 +749,26 @@ void core1_task()
 
 	while (1)
 	{
-		// Handle incoming UART comms
-		if (command_ready)
+		// Handle incoming UART commands from ring buffer
+		char current_cmd[CMD_STR_LEN];
+
+		// Process all available commands in the buffer
+		while (cmd_buffer_pop(current_cmd))
 		{
-			// Disable UART interrupts while processing
-			irq_set_enabled(UART0_IRQ, false);
 			// Check against the list of commands
+			bool command_found = false;
 			for (uint8_t i = 0; i < ARRAY_SIZE(commands); i++)
 			{
-				if (strncmp(cmd_str, commands[i].name, commands[i].name_len) == 0)
+				if (strncmp(current_cmd, commands[i].name, commands[i].name_len) == 0)
 				{
-					const char *arg = cmd_str + commands[i].name_len;
+					const char *arg = current_cmd + commands[i].name_len;
 					commands[i].fn(arg);
-					cmd_str[0] = '\0';
+					command_found = true;
 					break;
 				}
 			}
-			memset(cmd_str, 0, CMD_STR_LEN);
-			command_ready = false;
-			// Re-enable interrupts
-			irq_set_enabled(UART0_IRQ, true);
 		}
+
 		// Process status messages from core 0
 		status_msg_process_queue();
 

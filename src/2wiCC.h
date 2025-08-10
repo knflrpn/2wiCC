@@ -33,7 +33,7 @@
 #include "pico/time.h"
 #include "ws2812.pio.h"
 
-#define VERSION_NUMBER "1.3"
+#define VERSION_NUMBER "1.4"
 
 // Controller HID report structure.
 typedef struct
@@ -62,6 +62,9 @@ enum {
 #define VSYNC_IN_PIN 14
 #define UART_TX_PIN PICO_DEFAULT_UART_TX_PIN
 #define UART_RX_PIN PICO_DEFAULT_UART_RX_PIN
+
+#define CMD_RING_BUFFER_SIZE 64 // Number of commands that can be buffered
+#define CMD_STR_LEN 64          // Maximum length of a single command (if not already defined)
 
 typedef void (*cmd_fn_t)(const char *arg);
 typedef struct
