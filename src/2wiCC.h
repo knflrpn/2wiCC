@@ -54,7 +54,7 @@ enum {
 };
 
 #define CON_BUF_SIZE 1024
-#define REC_BUFF_SIZE 1024
+#define REC_BUFF_SIZE 16384
 
 #define CMD_CHAR '+'
 #define CMD_STR_LEN 64

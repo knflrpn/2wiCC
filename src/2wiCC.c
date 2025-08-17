@@ -1029,7 +1029,6 @@ static void send_recording_entry(uint16_t index)
 }
 
 /* Update recording buffer - call this in alarm_irq() function
- * Add this code after the controller state update in alarm_irq()
  */
 static void update_recording()
 {
