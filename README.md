@@ -26,6 +26,10 @@ Configure a second RP2040 board as a USB-UART bridge and house both boards in an
 2. Cross-wire UART pins (TX→RX, RX→TX) between boards
 3. Connect grounds between boards
 
+![Internals](/images/2wiCCInternals.jpg)
+
+A case for this setup is available here: https://www.printables.com/model/1401073-2wicc-case
+
 ### Option 2: Direct Connection
 Connect 2wiCC directly to your host system via a UART-to-USB adapter.
 
