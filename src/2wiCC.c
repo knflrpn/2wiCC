@@ -31,6 +31,7 @@ static uint32_t frame_delay_us = 10000; // delay from vsync to con state update
 
 static bool usb_connected = false;
 static bool led_on = true;
+static bool send_rumble = true;
 
 ControllerDigital_t rec_digital_buff[REC_BUFF_SIZE];
 ControllerAnalog_t rec_analog_buff[REC_BUFF_SIZE];
@@ -123,7 +124,8 @@ void update_rumble_state(uint8_t const *usb_buf)
 	// Only send if LF has changed.  HF is too chaotic to include.
 	if (lf_amp != last_rumble)
 	{
-		status_msg_send_with_data(MSG_USB_RUMBLE, rumble);
+		if (send_rumble)
+			status_msg_send_with_data(MSG_USB_RUMBLE, rumble);
 		last_rumble = lf_amp;
 	}
 }
@@ -501,6 +503,11 @@ static void cmd_setled(const char *arg)
 		debug_pixel(urgb_u32(0, 0, 0));
 }
 
+static void cmd_setrumble(const char *arg)
+{
+	send_rumble = arg[0] != '0';
+}
+
 /* Set IMU data - 12 bytes (6 accel + 6 gyro)
  */
 static void cmd_setimu(const char *arg)
@@ -551,6 +558,7 @@ static const command_t commands[] = {
 	{"GRS ", cmd_getrecordingbuffersize, 4},
 	{"GR ", cmd_getrecording, 3},
 	{"LED ", cmd_setled, 4},
+	{"RMBL ", cmd_setrumble, 5},
 	{"ECHO ", cmd_echo, 5},
 };
 

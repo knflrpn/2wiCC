@@ -45,6 +45,14 @@ The RGB LED provides visual feedback:
 
 ## Command Reference
 
+All commands are sent in ASCII and consist of
+
+1) A `+` character to indicate the start of a command.
+2) A command type consisting of one or more alphanumeric characters.
+3) A space character to indicate the end of the command type string.  All commands must include this space even if the command does not require a parameter.
+4) An optional parameter (depending on the command).
+5) A newline (either `\r` or `\n` or both) to commit the command.
+
 ### Controller Input Commands
 
 | Command | Parameter | Description |
@@ -54,11 +62,14 @@ The RGB LED provides visual feedback:
 | `QFI` | 42 hex digits | Full controller state (`QF`) plus IMU data |
 
 **Controller State Format**:
-- **Digital (3 bytes)**: Button states as bitmask (bit 7-0 as a hex character encoded in ASCII)
+
+Controller state is sent as hex-encoded ASCII.  E.g. a byte with decimal value 255 is sent as the two ASCII characters `FF`.
+
+- **Digital (3 bytes)**: Button states as a bitmask
     - First byte: [ZR, R, Right SL, Right SR, A, B, X, Y] (bits 7-0)
-    - Second byte: [charging_grip, unused, Capture, Home, Left Stick, Right Stick, +, -] (bits 7-0)
+    - Second byte: [unused, unused, Capture, Home, Left Stick, Right Stick, +, -] (bits 7-0)
     - Third byte: [ZL, L, Left SL, Left SR, D-pad Left, D-pad Right, D-pad Up, D-pad Down] (bits 7-0)
-- **Analog (6 bytes)**: Left stick X, Y, Right stick X, Y, encoded in the Pro Controller data format (see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_notes.md).  Center position is 0x800 and full swing is +/- 0x600.
+- **Analog (6 bytes)**: Left stick X, Y, Right stick X, Y, encoded in the Pro Controller data format (see https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_notes.md).  Center position is defined as 0x800 and full swing is +/- 0x600 from center.
 - **IMU (12 bytes)**: 16-bit little-endian 2's complement signed value each for X, Y, Z acceleration and X, Y, Z gyro, in that order.  Neutral for all values is 0.
 
 Note that IMU state is not queued; it takes effect immediately after `QFI` is parsed, and persists until the next `QFI`.
@@ -100,19 +111,31 @@ Note that IMU state is not queued; it takes effect immediately after `QFI` is pa
 | `VER` | None | Returns firmware version |
 | `GCS` | None | Get USB connection status (0=disconnected, 1=connected) |
 | `LED` | `0` or `1` | Disable/enable status LED |
+| `RMBL` | `0` or `1` | Disable/enable rumble feedback |
 | `ECHO` | text | Echo back the provided text |
+
+## Playback Modes
+
+### Real-Time Mode (`SPM RT`)
+- Always uses the most recently received controller state
+- Best for live input injection
+
+### Buffered Mode (`SPM BUF`)
+- Plays controller states sequentially from the queue
+- Advances one state per frame (60 FPS if VSYNC disabled, otherwise according to VSYNC)
+- Automatically switches back to real-time if buffer runs empty
 
 ## Usage Examples
 
 ### Basic Controller Input
 ```
-+QD 080000    # Press A button (neutral sticks)
++QD 080000    # Press A button
 +QD 000000    # Release all buttons
 ```
 
-### Full Controller State with Analog Sticks
+### Controller State with Analog Sticks
 ```
-+QF 000000000880000880    # A button + neutral sticks
++QF 000000000880000880    # No buttons and neutral sticks
 ```
 
 ### Recording Workflow
@@ -136,15 +159,4 @@ Recorded inputs use run-length encoding and are returned in this format:
 - **2 hex digits**: Number of consecutive frames with this state (1-240)
 
 Example: `+R 000000000880000880x74` means neutral controller for 0x74 frames.
-
-## Playback Modes
-
-### Real-Time Mode (`SPM RT`)
-- Always uses the most recently queued controller state
-- Best for live input injection
-
-### Buffered Mode (`SPM BUF`)
-- Plays controller states sequentially from the queue
-- Advances one state per frame (60 FPS if VSYNC disabled, otherwise according to VSYNC)
-- Automatically switches back to real-time if buffer runs empty
 
