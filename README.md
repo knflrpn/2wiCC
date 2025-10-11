@@ -22,7 +22,7 @@ Nintendo Switch Controller Emulator for RP2040/RP2350.
 
 ### Option 1: Dual-Board Setup (Recommended)
 Configure a second RP2040 board as a USB-UART bridge and house both boards in an enclosure:
-1. Flash the second board with a USB-UART bridge firmware.  Recommended is the dedicated bridge for 2wiCC, available at https://github.com/knflrpn/2wiCC_Comms/releases/tag/release
+1. Flash the second board with a USB-UART bridge firmware.  Recommended is the dedicated bridge for 2wiCC, available at https://github.com/knflrpn/2wiCC_Comms/releases
 2. Cross-wire UART pins (TX→RX, RX→TX) between boards
 3. Connect grounds between boards
 
