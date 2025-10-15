@@ -9,6 +9,11 @@ Nintendo Switch Controller Emulator for RP2040/RP2350.
 - Any RP2040-based board should work with pin configuration changes
 - Optional: External WS2812 RGB LED on GPIO 16 (if not using RP2040 Zero)
 
+
+## Switch Settings
+
+On your Switch, you need to go to Settings > Controllers & Accessories and check "Nintendo Switch Pro Controller Wired Communication" to force the Switch to use USB for USB-connected controllers.
+
 ## Connections
 
 | Function | GPIO Pin | Notes |
