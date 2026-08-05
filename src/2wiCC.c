@@ -696,7 +696,11 @@ static void alarm_irq(void)
 static uint32_t alarm_in_us(uint32_t delay_us)
 {
 	// Enable the alarm irq
+	#if PICO_RP2040
 	irq_set_enabled(TIMER_IRQ_0, true);
+	#else
+	irq_set_enabled(TIMER1_IRQ_0, true);
+	#endif
 
 	// Write the lower 32 bits of the target time to the alarm,
 	// which will arm it
@@ -711,7 +715,11 @@ static uint32_t alarm_in_us(uint32_t delay_us)
 static void alarm_at_us(uint32_t time_us)
 {
 	// Enable the alarm irq
+	#if PICO_RP2040
 	irq_set_enabled(TIMER_IRQ_0, true);
+	#else
+	irq_set_enabled(TIMER1_IRQ_0, true);
+	#endif
 
 	// Write the lower 32 bits of the target time to the alarm, which
 	// will arm it
@@ -741,7 +749,11 @@ void core1_task()
 	uart_set_irq_enables(uart0, true, false);
 
 	// Set irq handler for alarm irq
+	#if PICO_RP2040
 	irq_set_exclusive_handler(TIMER_IRQ_0, alarm_irq);
+	#else
+	irq_set_exclusive_handler(TIMER1_IRQ_0, alarm_irq);
+	#endif
 	// Enable timer interrupts for the alarm
 	hw_set_bits(&timer_hw->inte, 1u << 0);
 	// Start timer-based controller updates
