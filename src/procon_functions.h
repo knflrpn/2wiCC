@@ -8,6 +8,7 @@
 #include "usb_descriptors.h"
 
 // Function declarations
+void get_unique_id();
 void set_neutral_analog(ControllerAnalog_t *analogstate);
 void insert_constate_to_condata(ControllerData_t *condata, ControllerDigital_t *condigital, ControllerAnalog_t *conanalog);
 void spi_read(uint16_t addr, uint8_t len, uint8_t *buffer);

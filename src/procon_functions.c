@@ -13,6 +13,7 @@ bool imu_abbreviated = true;
 bool special_report_pending = false;
 bool special_report_queued = false;
 uint32_t last_report_time = 0;
+uint8_t unique_id[12];
 
 void set_neutral_analog(ControllerAnalog_t *analogstate)
 {
@@ -103,16 +104,21 @@ static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
 	memcpy(usb_out_buf, response_h, sizeof(response_h));
 }
 
-void fill_unique_id(uint8_t* dest)
+void get_unique_id()
 {
     static const char hexchars[] = "0123456789ABCDEF";
     uint8_t id[8];
     flash_get_unique_id(id);
 
     for (uint8_t i = 0; i < 6; ++i) {
-        dest[2*i + 0] = hexchars[id[i] >> 4];
-        dest[2*i + 1] = hexchars[id[i] & 0x0F];
+        unique_id[2*i + 0] = hexchars[id[i] >> 4];
+        unique_id[2*i + 1] = hexchars[id[i] & 0x0F];
     }
+}
+
+void fill_unique_id(uint8_t *dest)
+{
+	memcpy(dest, unique_id, 12);
 }
 
 /* Response to 80 01. Sends connection status and MAC data */

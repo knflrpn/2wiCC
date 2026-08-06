@@ -827,6 +827,9 @@ int main()
 	// Initialize inter-core message queue
 	status_msg_init();
 
+	// Getting unique ID requires pausing XIP, so do
+	// it before starting second core.
+	get_unique_id();
 	// Start second core (handles comms)
 	multicore_launch_core1(core1_task);
 	// Wait for core 1
@@ -939,7 +942,7 @@ void parse_usb(uint8_t const *current_usb_buf, uint16_t len)
 		break;
 
 	case 0x30: // normal controller state
-		tud_hid_report(0x30, &con_data, 0x3F);
+		tud_hid_report(0x30, con_data, 0x3F);
 		special_report_pending = false;
 		break;
 	}
