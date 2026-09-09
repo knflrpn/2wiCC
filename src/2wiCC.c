@@ -199,10 +199,14 @@ uint8_t hex2byte(const char *ch)
 			return 0;
 		}
 
-		val = val << 4;		// Shift to next nibble
-		tval = ch[i] - '0'; // Convert ascii number to its value
-		if (tval > 9)
-			tval -= ('A' - '0' - 10); // Convert A-F
+		val = val << 4; // Shift to next nibble
+		char c = ch[i];
+		if (c >= 'a' && c <= 'f')
+			tval = c - 'a' + 10; // lowercase a-f
+		else if (c >= 'A' && c <= 'F')
+			tval = c - 'A' + 10; // uppercase A-F
+		else
+			tval = c - '0'; // 0-9
 		val += tval;
 	}
 	return val;
