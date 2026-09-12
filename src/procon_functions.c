@@ -1,6 +1,7 @@
 #include "usb_descriptors.h"
 #include "procon_functions.h"
 #include "procon_data.h"
+#include "status_messages.h"
 #include <string.h>
 #include "pico/time.h"
 
@@ -115,14 +116,15 @@ static void output_passthrough(uint8_t const *usb_in, uint8_t *usb_out_buf)
 
 void get_unique_id()
 {
-    static const char hexchars[] = "0123456789ABCDEF";
-    uint8_t id[8];
-    flash_get_unique_id(id);
+	static const char hexchars[] = "0123456789ABCDEF";
+	uint8_t id[8];
+	flash_get_unique_id(id);
 
-    for (uint8_t i = 0; i < 6; ++i) {
-        unique_id[2*i + 0] = hexchars[id[i] >> 4];
-        unique_id[2*i + 1] = hexchars[id[i] & 0x0F];
-    }
+	for (uint8_t i = 0; i < 6; ++i)
+	{
+		unique_id[2 * i + 0] = hexchars[id[i] >> 4];
+		unique_id[2 * i + 1] = hexchars[id[i] & 0x0F];
+	}
 }
 
 void fill_unique_id(uint8_t *dest)
@@ -154,9 +156,10 @@ static void output_baudrate(uint8_t const *usb_in, uint8_t *usb_out_buf)
 	usb_out_buf[1] = 0x03;
 }
 
-/* Used to ignore request to switch to bluetooth */
+/* Used to warn the user that the console might stop talking USB */
 static void output_enable_usb_timeout(uint8_t const *usb_in, uint8_t *usb_out_buf)
 {
+	status_msg_send_with_data(MSG_USB_TIMEOUT, 1); // send warning message
 	memset(usb_out_buf, 0, 0x40);
 	usb_out_buf[0] = 0x81;
 	usb_out_buf[1] = kSubTypeDisableUsbTimeout;
@@ -165,6 +168,7 @@ static void output_enable_usb_timeout(uint8_t const *usb_in, uint8_t *usb_out_bu
 /* Used to ignore request to remain on USB (going to anyway) */
 static void output_disable_usb_timeout(uint8_t const *usb_in, uint8_t *usb_out_buf)
 {
+	status_msg_send_with_data(MSG_USB_TIMEOUT, 0); // send status message
 	memset(usb_out_buf, 0, 0x40);
 	usb_out_buf[0] = 0x81;
 	usb_out_buf[1] = kSubTypeEnableUsbTimeout;
@@ -318,7 +322,7 @@ static void output_report_0x01_erasespi(uint8_t const *buf, uint8_t *usb_out_buf
 	spi_erase(addr, len);
 }
 
-/* 0x01 subcommand 0x30: Set controller lights. Might use for something later.*/
+/* 0x01 subcommand 0x30: Set controller lights. Report this data to the user. */
 static void output_report_0x01_set_lights(uint8_t const *buf, uint8_t *usb_out_buf)
 {
 	struct ResponseX81 *resp = (struct ResponseX81 *)&usb_out_buf[0x01];
@@ -328,6 +332,8 @@ static void output_report_0x01_set_lights(uint8_t const *buf, uint8_t *usb_out_b
 	resp->subcommand_ack = 0x80;
 	resp->subcommand = 0x30;
 	fill_input_report(&resp->controller_data);
+
+	status_msg_send_with_data(MSG_USB_LIGHTS, buf[11]);
 }
 
 /* 0x01 subcommand 0x38: Set home button light. Might use for something later.*/

@@ -1,42 +1,41 @@
-# 2wiCC -- Switch (2) Controller Controller
+# 2wiCC -- Switch Controller Controller (SwiCC) v2
 Nintendo Switch Controller Emulator for RP2040/RP2350.
 
-2wiCC is a controller emulator that presents itself as a Switch (1) Pro Controller to the console while providing control from a PC via UART commands.
+2wiCC (SwiCC v2) is a controller emulator that presents itself as a Switch (1) Pro Controller to the console while providing control from a PC via UART commands.
 
 ## Hardware Requirements
 
-**Recommended**: Waveshare RP2040 Zero (for compact size and onboard RGB LED)
-- Any RP2040-based board should work with pin configuration changes
-- Optional: External WS2812 RGB LED on GPIO 16 (if not using RP2040 Zero)
+Any RP2040- or RP2350-based board should work, potentially with pin configuration changes.  This project has been written assuming a Waveshare RP2040-Zero board, which is ideal because of its small size, onboard RGB LED, and USB-C connector.
 
+A serial (UART) adapter is needed.  This project has been written assuming that a second RP2040-Zero board has been configured as a USB-serial adapter using the firmware available at https://github.com/knflrpn/2wiCC_Comms/releases .
 
 ## Switch Settings
 
-On your Switch, you need to go to Settings > Controllers & Accessories and check "Nintendo Switch Pro Controller Wired Communication" to force the Switch to use USB for USB-connected controllers.
+On your Switch, you need to go to Settings > Controllers & Accessories and check "Nintendo Switch Pro Controller Wired Communication" to force the Switch to use USB for USB-connected controllers, otherwise the Switch will only use USB to exchange Bluetooth information and then stop talking over USB.
 
 ## Connections
 
 | Function | GPIO Pin | Notes |
 |----------|----------|-------|
-| UART TX | 0 (default) | Serial output from RP2040 |
-| UART RX | 1 (default) | Serial input to RP2040 |
-| Status LED | 16 | WS2812 RGB LED (onboard on RP2040 Zero) |
+| UART TX | 0 (default) | Serial output from board |
+| UART RX | 1 (default) | Serial input to board |
+| Status LED | 16 | WS2812 RGB LED (onboard on RP2040-Zero) |
 | VSYNC Input | 14 | Optional: for frame synchronization |
 
 ## Assembly Options
 
 ### Option 1: Dual-Board Setup (Recommended)
-Configure a second RP2040 board as a USB-UART bridge and house both boards in an enclosure:
-1. Flash the second board with a USB-UART bridge firmware.  Recommended is the dedicated bridge for 2wiCC, available at https://github.com/knflrpn/2wiCC_Comms/releases
-2. Cross-wire UART pins (TX→RX, RX→TX) between boards
-3. Connect grounds between boards
+1. Flash one board with this firmware.
+2. Flash a second board with the USB-UART bridge firmware (https://github.com/knflrpn/2wiCC_Comms/releases).
+2. Cross-wire the UART pins (TX→RX, RX→TX) between the two boards.
+3. Connect grounds between the two boards.
 
 ![Internals](/images/2wiCCInternals.jpg)
 
 A case for this setup is available here: https://www.printables.com/model/1401073-2wicc-case
 
 ### Option 2: Direct Connection
-Connect 2wiCC directly to your host system via a UART-to-USB adapter.
+Connect SwiCC to your host system via a UART-to-USB adapter of your choice.
 
 - **Baud Rate**: 460,800 bps
 - **Format**: 8N1 (8 data bits, no parity, 1 stop bit)
@@ -45,8 +44,10 @@ Connect 2wiCC directly to your host system via a UART-to-USB adapter.
 ## LED Status Indicator
 
 The RGB LED provides visual feedback:
-- **Blue**: USB connection established
-- **Red Pulse**: Heartbeat indicates that controller state is being updated
+- **Red pulse (heartbeat)**: Indicator that SwiCC is alive
+- **Steady blue**: USB connection established
+
+If the heartbeat is present but there is no steady blue, it indicates that the SwiCC is alive but the Switch is not talking to it, which is most often because of the USB cable (e.g. using a 'charging only' cable that doesn't carry data).
 
 ## Command Reference
 
@@ -160,8 +161,18 @@ Recorded inputs use run-length encoding and are returned in this format:
 +R [18 hex digits]x[2 hex digits]
 ```
 - **18 hex digits**: Full controller state (9 bytes)
-- **x**: Separator
+- **x**: Separator (literal `x` character)
 - **2 hex digits**: Number of consecutive frames with this state (1-240)
 
-Example: `+R 000000000880000880x74` means neutral controller for 0x74 frames.
+Example: `+R 000000000880000880x74` means neutral controller for 0x74 (116 decimal) frames.
 
+## Status and Error Messages
+
+SwiCC sends status updates back to the host PC over the UART connection.  The format for these messages is a `+` character to mark the beginning of a message, an alphanumeric message type string, a space character, optional data, and a newline (`\r\n`) to mark the end of the message.
+
+| Message Format | Description |
+|----------------|-------------|
+| `+ERR WATCHDOG` | Indicates the microcontroller rebooted because the watchdog timer timed out. |
+| `+RMBL [6 hex digits]` | Rumble data sent from the Switch. Rumble feedback defaults to disabled and must be enabled with the `RMBL` command if desired. |
+| `+LGHT [2 hex digits]` | Reports a change to the controller's indicator lights. |
+| `+WRN TIMEOUT [0 or 1]` | Warning indicating whether the Switch has enabled (`1`) or disabled (`0`) USB timeout 4. If USB timeout remains enabled, the console will stop communicating over USB. See the `Switch Settings` section above to prevent this. |

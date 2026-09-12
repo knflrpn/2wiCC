@@ -75,6 +75,7 @@ target_link_libraries(2wiCC
         hardware_timer
         hardware_flash
         pico_multicore
+        pico_bootrom
         tinyusb_device
         tinyusb_board 
         )

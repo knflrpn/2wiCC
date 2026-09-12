@@ -27,97 +27,97 @@
 
 extern char shared_buf[0x40];
 
-#define TUD_HID_REPORT_DESC_PROCON(...)                                                              \
-	HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),                                                          \
-		HID_LOGICAL_MIN(0),                                                                          \
-		HID_USAGE(HID_USAGE_DESKTOP_JOYSTICK),                                                       \
-		HID_COLLECTION(HID_COLLECTION_APPLICATION), /* report ID 0x30 */                             \
-		0x85, 0x30,                                                                                  \
-		HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),                                                      \
-		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                                       \
-		HID_USAGE_MIN(1),                                                                            \
-		HID_USAGE_MAX(10),                                                                           \
-		HID_LOGICAL_MIN(0),                                                                          \
-		HID_LOGICAL_MAX(1),                                                                          \
-		HID_REPORT_SIZE(1),                                                                          \
-		HID_REPORT_COUNT(10),                                                                        \
-		HID_UNIT_EXPONENT(0),                                                                        \
-		HID_UNIT(0),                                                                                 \
-		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                                           \
-		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                                       \
-		HID_USAGE_MIN(11),                                                                           \
-		HID_USAGE_MAX(14),                                                                           \
-		HID_LOGICAL_MIN(0),                                                                          \
-		HID_LOGICAL_MAX(1),                                                                          \
-		HID_REPORT_SIZE(1),                                                                          \
-		HID_REPORT_COUNT(4),                                                                         \
-		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                                           \
-		HID_REPORT_SIZE(1),                                                                          \
-		HID_REPORT_COUNT(2),                                                                         \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE), /* Usage */                           \
-		0x0B, 0x01, 0x00, 0x01, 0x00,                                                                \
-		HID_COLLECTION(HID_COLLECTION_PHYSICAL), /* Usage */                                         \
-		0x0B, 0x30, 0x00, 0x01, 0x00,                                                                \
-		0x0B, 0x31, 0x00, 0x01, 0x00,                                                                \
-		0x0B, 0x32, 0x00, 0x01, 0x00,                                                                \
-		0x0B, 0x35, 0x00, 0x01, 0x00,                                                                \
-		HID_LOGICAL_MIN(0), /* Logical max 65534 */                                                  \
-		0x27, 0xFF, 0xFF, 0x00, 0x00,                                                                \
-		HID_REPORT_SIZE(16),                                                                         \
-		HID_REPORT_COUNT(4),                                                                         \
-		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                                           \
-		HID_COLLECTION_END, /* Usage */                                                              \
-		0x0B, 0x39, 0x00, 0x01, 0x00,                                                                \
-		HID_LOGICAL_MIN(0),                                                                          \
-		HID_LOGICAL_MAX(7),                                                                          \
-		HID_PHYSICAL_MIN(0), /* Physical Maximum (315) */                                            \
-		0x46, 0x3B, 0x01,                                                                            \
-		HID_UNIT(0x14),                                                                              \
-		HID_REPORT_SIZE(4),                                                                          \
-		HID_REPORT_COUNT(1),                                                                         \
-		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                                           \
-		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                                       \
-		HID_USAGE_MIN(15),                                                                           \
-		HID_USAGE_MAX(18),                                                                           \
-		HID_LOGICAL_MIN(0),                                                                          \
-		HID_LOGICAL_MAX(1),                                                                          \
-		HID_REPORT_SIZE(1),                                                                          \
-		HID_REPORT_COUNT(4),                                                                         \
-		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                                           \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(52),                                                                        \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
-		HID_USAGE_PAGE_N(0xFF00, 2),                                                                 \
-		0x85, 0x21,                                                 /* Report IN 0x21 */             \
-		HID_USAGE(0x01),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
-		0x85, 0x81,                                                 /* Report IN 0x81 */             \
-		HID_USAGE(0x02),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                                       \
-		0x85, 0x01,                                                 /* Report OUT 0x01 */            \
-		HID_USAGE(0x03),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
-		0x85, 0x10,                                                 /* Report OUT 0x10 */            \
-		HID_USAGE(0x04),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
-		0x85, 0x80,                                                 /* Report OUT 0x80 */            \
-		HID_USAGE(0x05),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
-		0x85, 0x82,                                                 /* Report OUT 0x82 */            \
-		HID_USAGE(0x06),                                                                             \
-		HID_REPORT_SIZE(8),                                                                          \
-		HID_REPORT_COUNT(63),                                                                        \
-		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE),                       \
+#define TUD_HID_REPORT_DESC_PROCON(...)                                        \
+	HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),                                    \
+		HID_LOGICAL_MIN(0),                                                    \
+		HID_USAGE(HID_USAGE_DESKTOP_JOYSTICK),                                 \
+		HID_COLLECTION(HID_COLLECTION_APPLICATION), /* report ID 0x30 */       \
+		0x85, 0x30,                                                            \
+		HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),                                \
+		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                 \
+		HID_USAGE_MIN(1),                                                      \
+		HID_USAGE_MAX(10),                                                     \
+		HID_LOGICAL_MIN(0),                                                    \
+		HID_LOGICAL_MAX(1),                                                    \
+		HID_REPORT_SIZE(1),                                                    \
+		HID_REPORT_COUNT(10),                                                  \
+		HID_UNIT_EXPONENT(0),                                                  \
+		HID_UNIT(0),                                                           \
+		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                     \
+		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                 \
+		HID_USAGE_MIN(11),                                                     \
+		HID_USAGE_MAX(14),                                                     \
+		HID_LOGICAL_MIN(0),                                                    \
+		HID_LOGICAL_MAX(1),                                                    \
+		HID_REPORT_SIZE(1),                                                    \
+		HID_REPORT_COUNT(4),                                                   \
+		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                     \
+		HID_REPORT_SIZE(1),                                                    \
+		HID_REPORT_COUNT(2),                                                   \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE), /* Usage */     \
+		0x0B, 0x01, 0x00, 0x01, 0x00,                                          \
+		HID_COLLECTION(HID_COLLECTION_PHYSICAL), /* Usage */                   \
+		0x0B, 0x30, 0x00, 0x01, 0x00,                                          \
+		0x0B, 0x31, 0x00, 0x01, 0x00,                                          \
+		0x0B, 0x32, 0x00, 0x01, 0x00,                                          \
+		0x0B, 0x35, 0x00, 0x01, 0x00,                                          \
+		HID_LOGICAL_MIN(0), /* Logical max 65534 */                            \
+		0x27, 0xFF, 0xFF, 0x00, 0x00,                                          \
+		HID_REPORT_SIZE(16),                                                   \
+		HID_REPORT_COUNT(4),                                                   \
+		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                     \
+		HID_COLLECTION_END, /* Usage */                                        \
+		0x0B, 0x39, 0x00, 0x01, 0x00,                                          \
+		HID_LOGICAL_MIN(0),                                                    \
+		HID_LOGICAL_MAX(7),                                                    \
+		HID_PHYSICAL_MIN(0), /* Physical Maximum (315) */                      \
+		0x46, 0x3B, 0x01,                                                      \
+		HID_UNIT(0x14),                                                        \
+		HID_REPORT_SIZE(4),                                                    \
+		HID_REPORT_COUNT(1),                                                   \
+		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                     \
+		HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),                                 \
+		HID_USAGE_MIN(15),                                                     \
+		HID_USAGE_MAX(18),                                                     \
+		HID_LOGICAL_MIN(0),                                                    \
+		HID_LOGICAL_MAX(1),                                                    \
+		HID_REPORT_SIZE(1),                                                    \
+		HID_REPORT_COUNT(4),                                                   \
+		HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),                     \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(52),                                                  \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                 \
+		HID_USAGE_PAGE_N(0xFF00, 2),                                           \
+		0x85, 0x21, /* Report IN 0x21 */                                       \
+		HID_USAGE(0x01),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                 \
+		0x85, 0x81, /* Report IN 0x81 */                                       \
+		HID_USAGE(0x02),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_INPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE),                 \
+		0x85, 0x01, /* Report OUT 0x01 */                                      \
+		HID_USAGE(0x03),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), \
+		0x85, 0x10, /* Report OUT 0x10 */                                      \
+		HID_USAGE(0x04),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), \
+		0x85, 0x80, /* Report OUT 0x80 */                                      \
+		HID_USAGE(0x05),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), \
+		0x85, 0x82, /* Report OUT 0x82 */                                      \
+		HID_USAGE(0x06),                                                       \
+		HID_REPORT_SIZE(8),                                                    \
+		HID_REPORT_COUNT(63),                                                  \
+		HID_OUTPUT(HID_CONSTANT | HID_VARIABLE | HID_ABSOLUTE | HID_VOLATILE), \
 		HID_COLLECTION_END
 
 enum
@@ -265,7 +265,7 @@ typedef struct ControllerData
 	uint8_t connection_info : 4;
 	uint8_t battery_level : 4;
 	struct ControllerDigital digital; // 3 bytes
-	struct ControllerAnalog analog;  // 6 bytes
+	struct ControllerAnalog analog;	  // 6 bytes
 	uint8_t rumble_input_report;
 } ControllerData_t;
 

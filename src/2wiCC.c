@@ -3,6 +3,7 @@
 #include <string.h>
 #include "hardware/timer.h"
 #include "pico/multicore.h"
+#include "pico/bootrom.h"
 #include "2wiCC.h"
 
 #include "tusb.h"
@@ -31,7 +32,7 @@ static uint32_t frame_delay_us = 10000; // delay from vsync to con state update
 
 static bool usb_connected = false;
 static bool led_on = true;
-static bool send_rumble = true;
+static bool send_rumble = false;
 
 ControllerDigital_t rec_digital_buff[REC_BUFF_SIZE];
 ControllerAnalog_t rec_analog_buff[REC_BUFF_SIZE];
@@ -543,6 +544,13 @@ static void cmd_queuefull_imu(const char *arg)
 	}
 }
 
+/* Reboot into DFU mode
+ */
+static void cmd_dfu(const char *arg)
+{
+	reset_usb_boot(0, 0);
+}
+
 static const command_t commands[] = {
 	// Make sure the trailing space is present.
 	{"QF ", cmd_queuefull, 3},
@@ -564,6 +572,7 @@ static const command_t commands[] = {
 	{"LED ", cmd_setled, 4},
 	{"RMBL ", cmd_setrumble, 5},
 	{"ECHO ", cmd_echo, 5},
+	{"DFU ", cmd_dfu, 4},
 };
 
 // Process each incoming character
@@ -699,12 +708,12 @@ static void alarm_irq(void)
  */
 static uint32_t alarm_in_us(uint32_t delay_us)
 {
-	// Enable the alarm irq
-	#if PICO_RP2040
+// Enable the alarm irq
+#if PICO_RP2040
 	irq_set_enabled(TIMER_IRQ_0, true);
-	#else
+#else
 	irq_set_enabled(TIMER1_IRQ_0, true);
-	#endif
+#endif
 
 	// Write the lower 32 bits of the target time to the alarm,
 	// which will arm it
@@ -718,12 +727,12 @@ static uint32_t alarm_in_us(uint32_t delay_us)
  */
 static void alarm_at_us(uint32_t time_us)
 {
-	// Enable the alarm irq
-	#if PICO_RP2040
+// Enable the alarm irq
+#if PICO_RP2040
 	irq_set_enabled(TIMER_IRQ_0, true);
-	#else
+#else
 	irq_set_enabled(TIMER1_IRQ_0, true);
-	#endif
+#endif
 
 	// Write the lower 32 bits of the target time to the alarm, which
 	// will arm it
@@ -752,12 +761,12 @@ void core1_task()
 	// Eable the UART to send interrupts (on RX only)
 	uart_set_irq_enables(uart0, true, false);
 
-	// Set irq handler for alarm irq
-	#if PICO_RP2040
+// Set irq handler for alarm irq
+#if PICO_RP2040
 	irq_set_exclusive_handler(TIMER_IRQ_0, alarm_irq);
-	#else
+#else
 	irq_set_exclusive_handler(TIMER1_IRQ_0, alarm_irq);
-	#endif
+#endif
 	// Enable timer interrupts for the alarm
 	hw_set_bits(&timer_hw->inte, 1u << 0);
 	// Start timer-based controller updates

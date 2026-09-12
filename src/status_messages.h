@@ -11,6 +11,7 @@ typedef enum
 {
 	MSG_USB_RUMBLE = 0x10,
 	MSG_USB_LIGHTS = 0x30,
+	MSG_USB_TIMEOUT = 0x05,
 	MSG_USB_HOME_LIGHT = 0x38,
 	MSG_USB_IMU_ENABLE = 0x40,
 	MSG_USB_IMU_SENSITIVITY = 0x41,
@@ -20,7 +21,8 @@ typedef enum
 } status_msg_type_t;
 
 // Status message structure
-typedef struct {
+typedef struct
+{
 	status_msg_type_t type;
 	uint32_t data;
 } status_msg_t;

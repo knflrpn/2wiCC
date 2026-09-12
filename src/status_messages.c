@@ -19,9 +19,8 @@ void status_msg_send(status_msg_type_t type)
 {
 	status_msg_t msg = {
 		.type = type,
-		.data = 0
-	};
-	
+		.data = 0};
+
 	// Non-blocking add - if queue is full, message is dropped
 	queue_try_add(&status_queue, &msg);
 }
@@ -30,7 +29,7 @@ void status_msg_send_with_data(status_msg_type_t type, uint32_t data)
 {
 	status_msg_t msg = {
 		.type = type,
-		.data = data & 0xFFFFFF  // Preserve original 24-bit data limit
+		.data = data & 0xFFFFFF // 24-bit data limit
 	};
 
 	// Non-blocking add - if queue is full, message is dropped
@@ -48,7 +47,8 @@ void status_msg_process_queue(void)
 		switch (msg.type)
 		{
 		case MSG_USB_RUMBLE:
-			if (msg.data != rumble_data) {
+			if (msg.data != rumble_data)
+			{
 				rumble_data = msg.data;
 				sprintf(msgstr, "+RMBL %06X\r\n", msg.data);
 				uart_puts(uart0, msgstr);
@@ -56,7 +56,12 @@ void status_msg_process_queue(void)
 			break;
 
 		case MSG_USB_LIGHTS:
-			sprintf(msgstr, "+LGHT %02X\r\n", msg.data);
+			sprintf(msgstr, "+LGHT %02X\r\n", msg.data & 0xFF);
+			uart_puts(uart0, msgstr);
+			break;
+
+		case MSG_USB_TIMEOUT:
+			sprintf(msgstr, "+WRN TIMEOUT %01X\r\n", msg.data & 0x1);
 			uart_puts(uart0, msgstr);
 			break;
 		}

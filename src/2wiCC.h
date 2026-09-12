@@ -33,7 +33,7 @@
 #include "pico/time.h"
 #include "ws2812.pio.h"
 
-#define VERSION_NUMBER "1.5"
+#define VERSION_NUMBER "2.0"
 
 // Controller HID report structure.
 typedef struct
@@ -48,9 +48,10 @@ typedef struct
 } USB_ControllerReport_Input_t;
 
 // Playback state
-enum {
-	A_RT,   // real-time
-	A_BUF,  // play from buffer
+enum
+{
+	A_RT,  // real-time
+	A_BUF, // play from buffer
 };
 
 #define CON_BUF_SIZE 1024
@@ -64,7 +65,7 @@ enum {
 #define UART_RX_PIN PICO_DEFAULT_UART_RX_PIN
 
 #define CMD_RING_BUFFER_SIZE 64 // Number of commands that can be buffered
-#define CMD_STR_LEN 64          // Maximum length of a single command (if not already defined)
+#define CMD_STR_LEN 64			// Maximum length of a single command (if not already defined)
 
 typedef void (*cmd_fn_t)(const char *arg);
 typedef struct
