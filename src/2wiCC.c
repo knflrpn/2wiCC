@@ -3,7 +3,6 @@
 #include <string.h>
 #include "hardware/timer.h"
 #include "pico/multicore.h"
-#include "pico/bootrom.h"
 #include "2wiCC.h"
 
 #include "tusb.h"
@@ -544,13 +543,6 @@ static void cmd_queuefull_imu(const char *arg)
 	}
 }
 
-/* Reboot into DFU mode
- */
-static void cmd_dfu(const char *arg)
-{
-	reset_usb_boot(0, 0);
-}
-
 static const command_t commands[] = {
 	// Make sure the trailing space is present.
 	{"QF ", cmd_queuefull, 3},
@@ -572,7 +564,6 @@ static const command_t commands[] = {
 	{"LED ", cmd_setled, 4},
 	{"RMBL ", cmd_setrumble, 5},
 	{"ECHO ", cmd_echo, 5},
-	{"DFU ", cmd_dfu, 4},
 };
 
 // Process each incoming character
@@ -788,11 +779,14 @@ void core1_task()
 		// Process all available commands in the buffer
 		while (cmd_buffer_pop(current_cmd))
 		{
-			// Check against the list of commands
 			bool command_found = false;
+			char first_char = current_cmd[0]; // Cache for fast comparison
+
 			for (uint8_t i = 0; i < ARRAY_SIZE(commands); i++)
 			{
-				if (strncmp(current_cmd, commands[i].name, commands[i].name_len) == 0)
+				// Fast-fail on the first character before attempting strncmp
+				if (first_char == commands[i].name[0] &&
+					strncmp(current_cmd, commands[i].name, commands[i].name_len) == 0)
 				{
 					const char *arg = current_cmd + commands[i].name_len;
 					commands[i].fn(arg);
@@ -993,6 +987,14 @@ void hid_task(void)
 		{
 			if (!special_report_queued)
 			{
+				// Subcommand replies (0x21) need the controller state
+				if (usb_special_buf[0] == 0x21) 
+				{
+					insert_constate_to_condata((ControllerData_t *)&usb_special_buf[1], 
+					                           &digital_buffer[conbuf_tail], 
+					                           &analog_buffer[conbuf_tail]);
+				}
+				
 				tud_hid_report(usb_special_buf[0], &usb_special_buf[1], 0x3F);
 				last_report_time = current_time;
 				special_report_queued = true;

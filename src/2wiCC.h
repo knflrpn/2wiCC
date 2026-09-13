@@ -33,7 +33,7 @@
 #include "pico/time.h"
 #include "ws2812.pio.h"
 
-#define VERSION_NUMBER "2.0"
+#define VERSION_NUMBER "2.1"
 
 // Controller HID report structure.
 typedef struct

@@ -15,9 +15,9 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.1.1)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.1.1)
+set(sdkVersion 2.3.1)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.1)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -75,7 +75,7 @@ target_link_libraries(2wiCC
         hardware_timer
         hardware_flash
         pico_multicore
-        pico_bootrom
+#        pico_bootrom
         tinyusb_device
         tinyusb_board 
         )

@@ -5,10 +5,6 @@
 #include <string.h>
 #include "pico/time.h"
 
-// The continuously-assembled input report (defined in 2wiCC.c). Its
-// controller_data holds the current sticks/buttons.
-extern ControllerDataReport_t con_report;
-
 uint8_t usb_special_buf[0x40]; // Buffer for special messages
 uint8_t usb_norm_buf[0x40];	   // Buffer for normal messages
 uint8_t polling_mode = 0;
@@ -95,11 +91,6 @@ void spi_erase(uint16_t addr, uint8_t len)
 /* Inserts the common controller data into the provided report */
 static void fill_input_report(ControllerData_t *controller_data)
 {
-	// Echo the current stick/button state. Subcommand (0x21) replies embed an
-	// input-report prefix; readspi memsets the buffer to 0 first, so without
-	// this the sticks are reported at raw (0,0) - the bottom-left corner - which
-	// the console renders as a phantom dot interleaved with the live 0x30 stream.
-	memcpy(controller_data, &con_report.controller_data, sizeof(ControllerData_t));
 	controller_data->timestamp = (to_ms_since_boot(get_absolute_time()) >> 5) & 0xFF;
 	controller_data->battery_level = battery_level_charging | battery_level_full;
 	controller_data->connection_info = 0x1;
@@ -282,16 +273,16 @@ static void output_report_0x01_readspi(uint8_t const *buf, uint8_t *usb_out_buf)
 	uint16_t addr = buf[kSubCommandDataOffset] | (uint16_t)buf[kSubCommandDataOffset + 1] << 8;
 	uint8_t len = buf[kSubCommandDataOffset + 4];
 
-	memset(usb_out_buf, 0x00, 0x40);
-	usb_out_buf[0x00] = 0x21;
-
+	// Set the standard response data
 	fill_input_report(&resp->controller_data);
-
+	// Set the ack
+	usb_out_buf[0x00] = 0x21;
+	// Insert the SPI header data
 	resp->subcommand_ack = 0x90;
 	resp->subcommand = 0x10;
 	resp->addr = addr;
 	resp->length = len;
-
+	// Insert the SPI data
 	spi_read(addr, len, resp->spi_data);
 }
 
