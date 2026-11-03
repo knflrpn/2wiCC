@@ -41,6 +41,19 @@ uint16_t stream_head = 0;
 bool recording = false;
 bool recording_wrap = false;
 
+// XIP flash pointer
+static const ScriptConfig_t *flash_script =
+    (const ScriptConfig_t *)(XIP_BASE + SCRIPT_FLASH_OFFSET);
+
+// Script playback state
+static uint32_t script_cursor    = 0;
+static uint32_t script_sec_end   = 0;
+static uint32_t script_body_iter = 0;
+static uint8_t  script_section   = SEC_DONE;
+static uint8_t  script_subframe  = 0;
+static volatile bool serial_received = false;
+static bool boot_script_checked = false;
+
 //--------------------------------------------------------------------
 // Function forward declarations
 //--------------------------------------------------------------------
@@ -129,6 +142,9 @@ void update_rumble_state(uint8_t const *usb_buf)
 		last_rumble = lf_amp;
 	}
 }
+
+// Script playback
+static void script_try_start(void);
 
 //--------------------------------------------------------------------
 // UART Commands
@@ -574,6 +590,7 @@ static void on_uart_rx()
 
 	while (uart_is_readable(uart0))
 	{
+		serial_received = true; // Lock out flash script playback if any serial happens
 		uint8_t ch = uart_getc(uart0);
 
 		// Hard force new action on command character
@@ -657,6 +674,89 @@ static void alarm_irq(void)
 			collision_count++;
 		}
 	}
+	else if (play_mode == A_SCRIPT)
+    {
+        collision_count = 0;
+
+        // Advance across section boundaries (header, body, footer) (also handles empty sections)
+        while (script_cursor >= script_sec_end)
+        {
+            if (script_section == SEC_HEADER)
+            {
+                script_section   = SEC_BODY;
+                script_cursor    = flash_script->body_offset;
+                script_sec_end   = flash_script->footer_offset;
+                script_body_iter = 0;
+            }
+            else if (script_section == SEC_BODY)
+            {
+                bool body_non_empty = (flash_script->body_offset < flash_script->footer_offset);
+                script_body_iter++;
+
+                if (body_non_empty &&
+                    (flash_script->body_repeats == 0 || script_body_iter < flash_script->body_repeats))
+                {
+                    // Repeat body
+                    script_cursor = flash_script->body_offset;
+                }
+                else
+                {
+                    // Move to footer
+                    script_section = SEC_FOOTER;
+                    script_cursor  = flash_script->footer_offset;
+                    script_sec_end = flash_script->end_offset;
+                }
+            }
+            else
+            {
+                // Footer complete: return to neutral state and realtime mode
+                script_section = SEC_DONE;
+                cmd_queuedigital("000000");
+                conbuf_tail = (conbuf_head + CON_BUF_SIZE - 1) % CON_BUF_SIZE;
+                play_mode = A_RT;
+                break;
+            }
+        }
+
+        // Decode active frame from XIP flash if script is still running
+        if (play_mode == A_SCRIPT)
+        {
+            const uint8_t *ptr = (const uint8_t *)flash_script + script_cursor;
+            uint8_t type = flash_script->script_type;
+
+            // Digital data (always 3 bytes)
+            safe_memcpy(&digital_buffer[conbuf_tail], ptr, sizeof(ControllerDigital_t));
+            ptr += 3;
+
+            // Analog data (6 bytes if bit 1 is set, otherwise neutral)
+            if (type & 0x02)
+            {
+                safe_memcpy(&analog_buffer[conbuf_tail], ptr, sizeof(ControllerAnalog_t));
+                ptr += 6;
+            }
+            else
+            {
+                set_neutral_analog(&analog_buffer[conbuf_tail]);
+            }
+
+            // RLE handling (1 byte if bit 0 is set, otherwise 1 frame per entry)
+            if (type & 0x01)
+            {
+                uint8_t rle_count = (*ptr == 0) ? 1 : *ptr;
+                ptr += 1;
+                if (++script_subframe >= rle_count)
+                {
+                    script_subframe = 0;
+                    script_cursor = (uint32_t)(ptr - (const uint8_t *)flash_script);
+                }
+            }
+            else
+            {
+                script_cursor = (uint32_t)(ptr - (const uint8_t *)flash_script);
+            }
+        }
+    }
+
 	// Insert updated state into data
 	insert_constate_to_condata(con_data, &digital_buffer[conbuf_tail], &analog_buffer[conbuf_tail]);
 	update_imu_data_in_report();
@@ -668,8 +768,9 @@ static void alarm_irq(void)
 	heartbeat++;
 	if (led_on)
 	{
+		// Red heartbeat.  Blue = USB connected.  Orange = script playing from flash.
 		uint8_t cycle_pos = heartbeat % 64;
-		uint8_t intensity = 0;
+		uint8_t intensity = (play_mode == A_SCRIPT) ? 5 : 0;
 
 		switch (cycle_pos)
 		{
@@ -690,7 +791,9 @@ static void alarm_irq(void)
 			break;
 		}
 
-		debug_pixel(urgb_u32(intensity, 0, usb_connected * 4));
+		uint8_t g = (play_mode == A_SCRIPT) ? 2 : 0;
+		uint8_t b = (play_mode == A_SCRIPT) ? 0 : usb_connected * 5;
+		debug_pixel(urgb_u32(intensity, g, b));
 	}
 }
 
@@ -773,6 +876,20 @@ void core1_task()
 
 	while (1)
 	{
+		// Check for a script in memory after some time if no serial data received.
+		if (!boot_script_checked)
+        {
+            if (serial_received)
+            {
+                boot_script_checked = true; // Serial activity seen; never auto-start
+            }
+            else if (to_ms_since_boot(get_absolute_time()) >= AUTOSTART_DELAY_MS)
+            {
+                boot_script_checked = true;
+                script_try_start();
+            }
+        }
+
 		// Handle incoming UART commands from ring buffer
 		char current_cmd[CMD_STR_LEN];
 
@@ -852,6 +969,32 @@ int main()
 		hid_task();
 		usb_connected = tud_connected();
 	}
+}
+
+static void script_try_start(void)
+{
+	// Check for the magic number and all sections
+    if (flash_script->magic != SCRIPT_MAGIC ||
+        flash_script->script_type > SCRIPT_FULL_RLE ||
+        flash_script->header_offset < sizeof(ScriptConfig_t) ||
+        flash_script->body_offset < flash_script->header_offset ||
+        flash_script->footer_offset < flash_script->body_offset ||
+        flash_script->end_offset < flash_script->footer_offset)
+    {
+        return; // No valid script present
+    }
+
+    script_section   = SEC_HEADER;
+    script_cursor    = flash_script->header_offset;
+    script_sec_end   = flash_script->body_offset;
+    script_body_iter = 0;
+    script_subframe  = 0;
+
+    // Configure VSYNC if script requires it
+	frame_delay_us = flash_script->vsync_delay_us;
+    cmd_vsync_en(flash_script->use_vsync ? "1" : "0");
+
+    play_mode = A_SCRIPT;
 }
 
 //--------------------------------------------------------------------

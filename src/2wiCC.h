@@ -33,7 +33,7 @@
 #include "pico/time.h"
 #include "ws2812.pio.h"
 
-#define VERSION_NUMBER "2.1"
+#define VERSION_NUMBER "2.2"
 
 // Controller HID report structure.
 typedef struct
@@ -50,8 +50,9 @@ typedef struct
 // Playback state
 enum
 {
-	A_RT,  // real-time
-	A_BUF, // play from buffer
+	A_RT,     // real-time
+	A_BUF,    // play from buffer
+	A_SCRIPT, // play from flash
 };
 
 #define CON_BUF_SIZE 1024
@@ -76,6 +77,37 @@ typedef struct
 } command_t;
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+#define SCRIPT_FLASH_OFFSET 0x00064000u // 400 KB offset (Address 0x10064000)
+#define SCRIPT_MAGIC        0x32575343u // "2WSC" in little-endian
+#define AUTOSTART_DELAY_MS  5000u       // 5 seconds of UART silence from boot
+
+typedef enum {
+    SCRIPT_DIG_ONLY  = 0, // 3 bytes: Digital only
+    SCRIPT_DIG_RLE   = 1, // 4 bytes: Digital + 1B RLE
+    SCRIPT_FULL_ONLY = 2, // 9 bytes: Digital + Analog
+    SCRIPT_FULL_RLE  = 3  // 10 bytes: Digital + Analog + 1B RLE
+} ScriptType_t;
+
+typedef enum {
+    SEC_HEADER = 0,
+    SEC_BODY   = 1,
+    SEC_FOOTER = 2,
+    SEC_DONE   = 3
+} ScriptSection_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;          // Must equal SCRIPT_MAGIC (0x32575343)
+    uint32_t header_offset;  // Byte offset from start of struct to header data
+    uint32_t body_offset;    // Byte offset where header ends and body begins
+    uint32_t footer_offset;  // Byte offset where body ends and footer begins
+    uint32_t end_offset;     // Byte offset where footer ends
+    uint32_t body_repeats;   // Number of times body plays (0 = infinite)
+	uint32_t vsync_delay_us; // VSYNC delay
+    uint8_t  script_type;    // ScriptType_t (0..3)
+    uint8_t  use_vsync;      // 0 = internal 60Hz timer, 1 = external VSYNC
+    uint8_t  reserved[2];    // Pad header to 32 bytes
+} ScriptConfig_t;
 
 //--------------------------------------------------------------------
 // NeoPixel control
